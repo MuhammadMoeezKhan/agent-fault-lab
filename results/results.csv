@@ -1,0 +1,17 @@
+profile,policy,episodes,task_success,duplicate_action_rate,silent_failure_rate,unconfirmed_rate,pass_hat_8
+none,naive-retry,3200,1.0,0.0,0.0,0.0,1.0
+none,verify-before-retry,3200,1.0,0.0,0.0,0.0,1.0
+none,idempotency-key,3200,1.0,0.0,0.0,0.0,1.0
+none,idempotency-key+verify,3200,1.0,0.0,0.0,0.0,1.0
+low,naive-retry,3200,0.93875,0.031875,0.0609375,0.0,0.5990897435897437
+low,verify-before-retry,3200,0.959375,0.0015625,0.040625,0.0,0.7096666666666667
+low,idempotency-key,3200,0.970625,0.0,0.0290625,0.0,0.7825
+low,idempotency-key+verify,3200,1.0,0.0,0.0,0.0,1.0
+medium,naive-retry,3200,0.805625,0.101875,0.183125,0.0,0.18844910644910645
+medium,verify-before-retry,3200,0.8815625,0.0178125,0.1171875,0.0,0.3687319347319347
+medium,idempotency-key,3200,0.8928125,0.0,0.099375,0.0,0.3888426573426573
+medium,idempotency-key+verify,3200,0.998125,0.0,0.0,0.001875,0.985
+high,naive-retry,3200,0.6615625,0.1984375,0.2909375,0.0,0.03768065268065268
+high,verify-before-retry,3200,0.7909375,0.05375,0.2025,0.0,0.14322066822066823
+high,idempotency-key,3200,0.81125,0.0,0.1471875,0.0,0.19260528360528362
+high,idempotency-key+verify,3200,0.9925,0.0,0.0,0.0075,0.9411666666666666
