@@ -58,7 +58,26 @@ def to_markdown(rows, k=8) -> str:
     return head + "\n".join(lines) + "\n"
 
 
+def run_simulation(args) -> int:
+    """The v0.1 grid, driven by the `simulate` subcommand's arguments."""
+    out = Path(args.out)
+    profiles = [replace(p, p_commit_given_timeout=args.p_commit) for p in PROFILES.values()]
+    rows = run_grid(profiles, tasks=args.tasks, trials=args.trials, seed=args.seed, k=args.k)
+    out.mkdir(parents=True, exist_ok=True)
+    md = to_markdown(rows, args.k)
+    (out / "results.md").write_text(md)
+    with open(out / "results.csv", "w", newline="") as f:
+        cols = [c for c in rows[0] if not c.endswith("_ci")]
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: r[c] for c in cols})
+    print(md)
+    return 0
+
+
 def main() -> None:
+    """Kept so `python -m agentfaultlab.run` still runs the grid alone."""
     ap = argparse.ArgumentParser(description="agent-fault-lab experiment runner")
     ap.add_argument("--tasks", type=int, default=200)
     ap.add_argument("--trials", type=int, default=16)
@@ -66,20 +85,7 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=8)
     ap.add_argument("--p-commit", type=float, default=0.5, help="P(write committed | response lost)")
     ap.add_argument("--out", type=Path, default=Path("results"))
-    args = ap.parse_args()
-
-    profiles = [replace(p, p_commit_given_timeout=args.p_commit) for p in PROFILES.values()]
-    rows = run_grid(profiles, tasks=args.tasks, trials=args.trials, seed=args.seed, k=args.k)
-    args.out.mkdir(parents=True, exist_ok=True)
-    md = to_markdown(rows, args.k)
-    (args.out / "results.md").write_text(md)
-    with open(args.out / "results.csv", "w", newline="") as f:
-        cols = [c for c in rows[0] if not c.endswith("_ci")]
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for r in rows:
-            w.writerow({c: r[c] for c in cols})
-    print(md)
+    run_simulation(ap.parse_args())
 
 
 if __name__ == "__main__":

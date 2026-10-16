@@ -4,6 +4,11 @@ Seeded fault injection and reliability metrics for tool-calling agents. It answe
 
 No API keys, no GPU, standard library only (pytest for the tests).
 
+Two parts:
+
+1. **The simulator** (v0.1): scripted policies against seeded faults, to show how a metric moves. The table below.
+2. **The audit** (v0.2): the same fault taxonomy aimed at real tools over the Model Context Protocol, with ground truth read from the backend instead of from anyone's report. See "Auditing a real tool" below.
+
 ## The result, in one table
 
 200 invoices x 16 trials = 3,200 episodes per row, seed 0. Task: charge an invoice exactly once and apply its fulfillment. "Silent failures" are episodes where the agent reported success while the real state was wrong.
@@ -55,9 +60,9 @@ Assumptions you can change in `FaultProfile`: when a response is lost, the write
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q                     # 21 tests, one per failure mode and metric
-agent-fault-lab               # writes results/results.md and results.csv
-agent-fault-lab --p-commit 1.0 --seed 3 --tasks 500
+pytest -q                     # 59 tests, no network and no API key needed
+agent-fault-lab simulate      # writes results/results.md and results.csv
+agent-fault-lab simulate --p-commit 1.0 --seed 3 --tasks 500
 ```
 
 ## Test your own agent
@@ -71,6 +76,84 @@ print(summarize(episodes, k=8))
 ```
 
 `notebooks/walkthrough.ipynb` runs the grid and a custom policy end to end.
+
+## Auditing a real tool
+
+The simulator answers what a metric does under faults. The audit answers whether one real tool keeps its promises, and it never takes the tool's word for it.
+
+```bash
+agent-fault-lab --list-faults                     # the taxonomy, with provenance
+agent-fault-lab check specs/reference-memory.json # audit a server's tools
+```
+
+`check` exits 1 if any tool duplicates an effect, loses one, or contradicts its own annotations, so it works as a CI gate on a server you maintain.
+
+### How a verdict is reached
+
+For one tool and one fault, three trials run on three freshly built backends:
+
+| trial | what runs | snapshot |
+|---|---|---|
+| `clean_once` | the call once, no fault | S1, the shape of one application |
+| `clean_twice` | the call twice, no fault | S2, the shape of two |
+| `faulted` | the fault, then a retry if the caller was left without an answer | Sf |
+
+The verdict follows from which baseline Sf matches: S1 is `SAFE`, S2 is `DUPLICATED`, the untouched state is `LOST`, and anything else is `DIVERGED`. Nothing in that chain reads the tool's response or an agent's summary, so a tool that misreports what it did is caught by construction.
+
+Two honest limits are reported rather than hidden. When S1 equals S2, no end state could distinguish one application from two (an overwrite, or real deduplication), so the tool is repeat safe for those arguments but is kept out of the duplicate-rate denominator. And every trial runs three times by default, because a tool that is sometimes safe is not safe, and because a snapshot that moves on its own means the observer is not canonical yet and the row must not be trusted.
+
+### The faults
+
+Injected at the transport, so they work with any client and any server. Ids are stable; `--list-faults` prints the paper or protocol issue each one comes from.
+
+| id | fault | what the caller sees |
+|---|---|---|
+| F1 | lost response after commit | a timeout, after the write landed |
+| F2 | duplicate delivery | one answer; the call was delivered twice |
+| F3 | late commit | a timeout, then the write lands later |
+| F4 | concurrent twin calls | one answer; two calls raced |
+| F5 | partial batch | a timeout, after part of a list argument committed |
+| F6 | silent OK | success, for a call that never ran |
+| F7 | error before commit | an error. The control: a retry here must be safe |
+
+### Observers
+
+Ground truth comes from an observer that reads the backend and canonicalises what it finds, so two backends holding the same state compare equal. Content digests instead of mtimes, sorted rows instead of insertion order, commit subjects and tree digests instead of commit hashes. Built in: filesystem, SQLite, git, and any composition of them.
+
+### Putting a fault under a real client
+
+The audit drives its own client. To measure what Claude Code, Codex CLI or any other client does when a call goes ambiguous, put the proxy in front of the server in that client's own config and leave the client alone:
+
+```bash
+agent-fault-lab proxy --fault F1:write_file@1 --trace trace.jsonl \
+  -- npx -y @modelcontextprotocol/server-filesystem /tmp/sandbox
+```
+
+Everything the proxy does not need to understand passes through untouched, including methods newer than this release and server to client requests. Only the `tools/call` requests the plan names are altered, and the JSONL trace records every message and every injection.
+
+### Writing a spec
+
+A spec is one JSON file per server, so it is also the unit of contribution: send a spec for your own server and the audit runs it unchanged. `{root}` is replaced with a fresh temporary directory per trial.
+
+```json
+{
+  "server": {
+    "name": "my-server",
+    "command": ["my-server", "--data", "{root}"],
+    "observer": {"kind": "sqlite", "path": "app.db"},
+    "setup": {"sqlite": [{"path": "app.db", "sql": "create table charges (id text, amount int);"}]}
+  },
+  "fixtures": [
+    {
+      "tool": "charge",
+      "arguments": {"id": "INV-1", "amount": 100},
+      "probes": [["get_charge", {"id": "INV-1"}]]
+    }
+  ]
+}
+```
+
+`probes` are read-only calls used to decide something separate from duplication: whether a caller who never got an answer could have found out what happened. If no probe's output differs between the untouched backend and the backend after one application, the tool is unconfirmable through that server, and the agent on the other end has nothing to check against.
 
 ## References
 

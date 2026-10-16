@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-fault-lab"
-version = "0.1.0"
-description = "Seeded fault injection and reliability metrics for tool-calling agents"
+version = "0.2.0"
+description = "Fault injection and state-checked audits for tool-calling agents and their tools"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -17,7 +17,7 @@ dev = ["pytest"]
 notebook = ["nbformat", "nbclient", "ipykernel"]
 
 [project.scripts]
-agent-fault-lab = "agentfaultlab.run:main"
+agent-fault-lab = "agentfaultlab.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

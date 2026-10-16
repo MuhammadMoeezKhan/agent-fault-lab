@@ -1,0 +1,520 @@
+"""The conformance audit: does a real tool keep its promises under a fault?
+
+For one tool and one fault mode the audit runs three trials, each on a fresh
+backend built the same way:
+
+* `clean_once`: call once, no fault. Snapshot S1 is what one application of
+  this tool looks like.
+* `clean_twice`: call twice, no fault. Snapshot S2 is what two applications
+  look like. If S2 equals S1 then no end state could ever distinguish one
+  application from two, so the trial cannot detect a duplicate: the tool is
+  recorded as repeat safe for these arguments but is kept out of the
+  duplicate-rate denominator, because an overwrite and real deduplication
+  look the same from outside.
+* `faulted`: inject the fault, then retry once if the caller was left without
+  an answer, which is what a client does when a call times out.
+
+The faulted end state is then compared against S0 (untouched), S1 and S2, and
+the verdict follows from which it matches. Nothing in the chain reads the
+tool's own report, so a tool that lies about what it did is caught by
+construction.
+
+Each trial is repeated (`repeats`, default 3) because a tool that is
+sometimes safe is not safe, and because a snapshot that differs run to run
+means the observer is not canonical yet and the result must not be trusted.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import tempfile
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Optional, Sequence
+
+from .mcp import taxonomy
+from .mcp.session import CallTimeout, ServerSession, SessionError, Tool, ToolCall, TraceWriter
+from .observers.base import Observer, Snapshot, digest, equal
+
+#: Argument names that commonly carry a caller supplied deduplication key.
+#: Used only as a hint in the report: the authoritative test is behavioural.
+DEDUP_ARGUMENT_HINTS = (
+    "idempotency_key",
+    "idempotencykey",
+    "idempotency-key",
+    "request_id",
+    "requestid",
+    "client_token",
+    "clienttoken",
+    "dedup_key",
+    "dedupkey",
+    "nonce",
+)
+
+MULTIPLICITY_NONE = "none"
+MULTIPLICITY_ONCE = "once"
+MULTIPLICITY_TWICE = "twice"
+MULTIPLICITY_OTHER = "other"
+
+SAFE = "SAFE"
+DUPLICATED = "DUPLICATED"
+LOST = "LOST"
+DIVERGED = "DIVERGED"
+NOT_MUTATING = "NOT_MUTATING"
+BROKEN = "BROKEN"
+
+
+@dataclass
+class ServerTarget:
+    """How to build a fresh instance of one server and read its backend.
+
+    `command` may contain `{root}`, which is replaced with the trial's
+    temporary directory. `setup` seeds that directory before the server
+    starts (a git init, a schema, some files). `observer` builds the observer
+    for the trial's root. Everything a trial touches must live under the
+    root, or trials leak into each other and the replay oracle is void.
+    """
+
+    name: str
+    command: Sequence[str]
+    observer: Callable[[str], Observer]
+    setup: Optional[Callable[[str], None]] = None
+    env: Optional[dict[str, str]] = None
+    cwd_is_root: bool = True
+    #: Recorded in the report so a result can be tied to a version.
+    version: str = ""
+    timeout_s: float = 20.0
+
+    def resolve_command(self, root: str) -> list[str]:
+        return [part.replace("{root}", root) for part in self.command]
+
+    def resolve_env(self, root: str) -> dict[str, str]:
+        return {
+            key: value.replace("{root}", root) for key, value in (self.env or {}).items()
+        }
+
+
+@dataclass
+class Fixture:
+    """A concrete call to test, plus the read calls that might confirm it.
+
+    `arguments` may contain `{root}` in any string value. `probes` are
+    read-only calls used to decide whether a caller could have found out
+    whether the effect landed: if no probe's output differs between the
+    untouched backend and the backend after one application, the tool is
+    UNCONFIRMABLE through this server.
+    """
+
+    tool: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    probes: tuple[tuple[str, dict[str, Any]], ...] = ()
+    note: str = ""
+
+    def resolve(self, root: str) -> dict[str, Any]:
+        return _substitute(self.arguments, root)
+
+    def resolved_probes(self, root: str) -> list[tuple[str, dict[str, Any]]]:
+        return [(name, _substitute(args, root)) for name, args in self.probes]
+
+
+def _substitute(value: Any, root: str) -> Any:
+    if isinstance(value, str):
+        return value.replace("{root}", root)
+    if isinstance(value, dict):
+        return {key: _substitute(item, root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_substitute(item, root) for item in value]
+    return value
+
+
+@dataclass
+class TrialResult:
+    """One run of one condition, with what the caller saw and what landed."""
+
+    condition: str
+    multiplicity: str
+    snapshot_digest: str
+    caller_saw_success: bool
+    caller_left_unsure: bool
+    calls: list[ToolCall] = field(default_factory=list)
+    error: Optional[str] = None
+    snapshot: Optional[Snapshot] = None
+
+
+@dataclass
+class ToolVerdict:
+    """What the audit concluded about one tool under one fault mode."""
+
+    server: str
+    tool: str
+    fault: str
+    verdict: str
+    multiplicities: list[str]
+    mutating: bool
+    repeat_distinguishable: bool
+    confirmable: Optional[bool]
+    caller_left_unsure: bool
+    dedup_argument: Optional[str]
+    read_only_hint: Optional[bool]
+    idempotent_hint: Optional[bool]
+    annotation_violations: list[str] = field(default_factory=list)
+    deterministic: bool = True
+    notes: list[str] = field(default_factory=list)
+
+    def as_row(self) -> dict[str, Any]:
+        return {
+            "server": self.server,
+            "tool": self.tool,
+            "fault": self.fault,
+            "verdict": self.verdict,
+            "multiplicities": ",".join(self.multiplicities),
+            "mutating": self.mutating,
+            "repeat_distinguishable": self.repeat_distinguishable,
+            "confirmable": self.confirmable,
+            "caller_left_unsure": self.caller_left_unsure,
+            "dedup_argument": self.dedup_argument or "",
+            "read_only_hint": self.read_only_hint,
+            "idempotent_hint": self.idempotent_hint,
+            "annotation_violations": ";".join(self.annotation_violations),
+            "deterministic": self.deterministic,
+            "notes": "; ".join(self.notes),
+        }
+
+
+class Audit:
+    """Runs fixtures against one target under a set of fault modes."""
+
+    def __init__(
+        self,
+        target: ServerTarget,
+        *,
+        repeats: int = 3,
+        settle_s: float = 1.0,
+        trace: Optional[TraceWriter] = None,
+        workdir: Optional[str] = None,
+    ) -> None:
+        self.target = target
+        self.repeats = max(1, repeats)
+        self.settle_s = settle_s
+        self.trace = trace
+        self.workdir = workdir
+        #: The server's own `serverInfo`, filled in by `list_tools`. An npx or
+        #: uvx command resolves to whatever is current, so the run has to
+        #: record what actually answered rather than what was asked for.
+        self.server_info: dict[str, Any] = {}
+
+    # ------------------------------------------------------------------ plumbing
+
+    def _make_root(self) -> str:
+        root = tempfile.mkdtemp(prefix="afl-", dir=self.workdir)
+        if self.target.setup is not None:
+            self.target.setup(root)
+        return root
+
+    def _session(self, root: str, plan: Optional[Any]) -> ServerSession:
+        return ServerSession(
+            self.target.resolve_command(root),
+            plan=plan,
+            cwd=root if self.target.cwd_is_root else None,
+            env=self.target.resolve_env(root) or None,
+            trace=self.trace,
+            timeout_s=self.target.timeout_s,
+        )
+
+    def list_tools(self) -> list[Tool]:
+        root = self._make_root()
+        try:
+            with self._session(root, None) as session:
+                tools = session.list_tools()
+                self.server_info = session.server_info
+                if self.trace is not None:
+                    self.trace.note(
+                        "server_info",
+                        target=self.target.name,
+                        command=self.target.resolve_command("{root}"),
+                        declared_version=self.target.version,
+                        server_info=self.server_info,
+                        tools=[tool.name for tool in tools],
+                    )
+                return tools
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    # --------------------------------------------------------------------- trials
+
+    def _trial(
+        self,
+        fixture: Fixture,
+        *,
+        condition: str,
+        plan: Optional[Any],
+        applications: int,
+        retry_if_unsure: bool,
+        settle_s: float = 0.0,
+        probe: bool = False,
+    ) -> tuple[TrialResult, Snapshot, Snapshot, dict[str, Any]]:
+        """Run one trial on a fresh backend. Returns (result, before, after, probes)."""
+        root = self._make_root()
+        observer = self.target.observer(root)
+        before: Snapshot = {}
+        after: Snapshot = {}
+        probe_outputs: dict[str, Any] = {}
+        result = TrialResult(
+            condition=condition,
+            multiplicity=MULTIPLICITY_OTHER,
+            snapshot_digest="",
+            caller_saw_success=False,
+            caller_left_unsure=False,
+        )
+        try:
+            with self._session(root, plan) as session:
+                before = observer.snapshot()
+                if probe:
+                    probe_outputs["before"] = self._probe(session, fixture, root)
+                arguments = fixture.resolve(root)
+                for attempt in range(1, applications + 1):
+                    call = session.call_tool(fixture.tool, arguments, attempt=attempt)
+                    result.calls.append(call)
+                if retry_if_unsure and result.calls and not result.calls[-1].caller_saw_success:
+                    result.calls.append(
+                        session.call_tool(
+                            fixture.tool, arguments, attempt=len(result.calls) + 1
+                        )
+                    )
+                if settle_s:
+                    # F3's held call has to land before the snapshot is taken,
+                    # or a late write is scored as no write at all.
+                    time.sleep(settle_s)
+                if probe:
+                    probe_outputs["after"] = self._probe(session, fixture, root)
+                after = observer.snapshot()
+        except (SessionError, CallTimeout, OSError) as exc:
+            result.error = f"{type(exc).__name__}: {exc}"
+            after = observer.snapshot()
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+        last = result.calls[-1] if result.calls else None
+        result.caller_saw_success = bool(last and last.caller_saw_success)
+        result.caller_left_unsure = any(call.timed_out for call in result.calls)
+        result.snapshot = after
+        result.snapshot_digest = digest(after)
+        return result, before, after, probe_outputs
+
+    def _probe(
+        self, session: ServerSession, fixture: Fixture, root: str
+    ) -> list[dict[str, Any]]:
+        outputs = []
+        for name, arguments in fixture.resolved_probes(root):
+            call = session.call_tool(name, arguments)
+            outputs.append(
+                {
+                    "tool": name,
+                    "text": _result_text(call.result),
+                    "errored": call.error is not None or call.timed_out,
+                }
+            )
+        return outputs
+
+    # ------------------------------------------------------------------- baselines
+
+    def baselines(self, fixture: Fixture) -> dict[str, Any]:
+        """S0, S1 and S2 for one fixture, plus what the probes revealed."""
+        once, before_once, after_once, probes = self._trial(
+            fixture, condition="clean_once", plan=None, applications=1,
+            retry_if_unsure=False, probe=bool(fixture.probes),
+        )
+        twice, _, after_twice, _ = self._trial(
+            fixture, condition="clean_twice", plan=None, applications=2,
+            retry_if_unsure=False,
+        )
+        mutating = not equal(before_once, after_once)
+        confirmable: Optional[bool] = None
+        if fixture.probes and probes.get("before") is not None:
+            confirmable = probes.get("before") != probes.get("after")
+        return {
+            "s0": before_once,
+            "s1": after_once,
+            "s2": after_twice,
+            "mutating": mutating,
+            "repeat_distinguishable": not equal(after_once, after_twice),
+            "confirmable": confirmable,
+            "clean_once": once,
+            "clean_twice": twice,
+            "probes": probes,
+        }
+
+    # -------------------------------------------------------------------- verdicts
+
+    def run_tool(
+        self,
+        fixture: Fixture,
+        tool: Optional[Tool] = None,
+        modes: Iterable[str] = taxonomy.AUDIT_SEQUENCE,
+    ) -> list[ToolVerdict]:
+        """Audit one fixture under each fault mode."""
+        from .mcp.injector import FaultPlan  # local import keeps the module light
+
+        base = self.baselines(fixture)
+        dedup = _dedup_argument(tool, fixture)
+        verdicts: list[ToolVerdict] = []
+
+        for mode_name in modes:
+            mode = taxonomy.get(mode_name)
+            multiplicities: list[str] = []
+            unsure = False
+            notes: list[str] = []
+            for _ in range(self.repeats):
+                plan = FaultPlan.parse(f"{mode.id}:{fixture.tool}@1")
+                settle = self.settle_s + plan.delay_s if mode.id == "F3" else 0.0
+                trial, _, after, _ = self._trial(
+                    fixture,
+                    condition=f"fault-{mode.id}",
+                    plan=plan,
+                    applications=1,
+                    retry_if_unsure=True,
+                    settle_s=settle,
+                )
+                if trial.error:
+                    notes.append(trial.error)
+                multiplicities.append(
+                    classify(after, base["s0"], base["s1"], base["s2"])
+                )
+                unsure = unsure or trial.caller_left_unsure
+
+            if not base["repeat_distinguishable"]:
+                # S1 == S2: two applications leave the same state as one, so
+                # no duplicate could be detected here even if one landed. The
+                # tool is repeat safe for these arguments, but the reason
+                # (an overwrite, or real deduplication) is not separable from
+                # state, so it is said rather than assumed.
+                notes.append(
+                    "repeat not distinguishable from state (overwrite or "
+                    "deduplication); excluded from duplicate-rate denominators"
+                )
+            verdict = self._verdict(mode, multiplicities, base, notes)
+            violations = _annotation_violations(tool, base, multiplicities, mode)
+            if (
+                tool is not None
+                and tool.idempotent_hint is False
+                and base["mutating"]
+                and not base["repeat_distinguishable"]
+            ):
+                # The opposite of a violation, and worth recording: the tool
+                # understates itself, so a client that refuses to replay it is
+                # paying for a risk that is not there.
+                notes.append(
+                    "idempotentHint:false but repeating the call left the same "
+                    "state (the hint is pessimistic)"
+                )
+            verdicts.append(
+                ToolVerdict(
+                    server=self.target.name,
+                    tool=fixture.tool,
+                    fault=mode.id,
+                    verdict=verdict,
+                    multiplicities=multiplicities,
+                    mutating=base["mutating"],
+                    repeat_distinguishable=base["repeat_distinguishable"],
+                    confirmable=base["confirmable"],
+                    caller_left_unsure=unsure,
+                    dedup_argument=dedup,
+                    read_only_hint=tool.read_only_hint if tool else None,
+                    idempotent_hint=tool.idempotent_hint if tool else None,
+                    annotation_violations=violations,
+                    deterministic=len(set(multiplicities)) == 1,
+                    notes=notes,
+                )
+            )
+        return verdicts
+
+    def _verdict(
+        self,
+        mode: taxonomy.FaultMode,
+        multiplicities: list[str],
+        base: dict[str, Any],
+        notes: list[str],
+    ) -> str:
+        if not base["mutating"]:
+            return NOT_MUTATING
+        if any("SessionError" in note for note in notes):
+            return BROKEN
+        expected = (
+            MULTIPLICITY_ONCE
+            if mode.effect_expected_after_retry == "once"
+            else MULTIPLICITY_NONE
+        )
+        observed = set(multiplicities)
+        if observed == {expected}:
+            return SAFE
+        if MULTIPLICITY_TWICE in observed:
+            return DUPLICATED
+        if observed == {MULTIPLICITY_NONE} and expected == MULTIPLICITY_ONCE:
+            return LOST
+        return DIVERGED
+
+
+def classify(final: Snapshot, s0: Snapshot, s1: Snapshot, s2: Snapshot) -> str:
+    """Which baseline the faulted end state matches."""
+    if equal(final, s1):
+        return MULTIPLICITY_ONCE
+    if equal(final, s2):
+        return MULTIPLICITY_TWICE
+    if equal(final, s0):
+        return MULTIPLICITY_NONE
+    return MULTIPLICITY_OTHER
+
+
+def _result_text(result: Optional[dict[str, Any]]) -> str:
+    if not result:
+        return ""
+    content = result.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts = [
+        item.get("text", "")
+        for item in content
+        if isinstance(item, dict) and item.get("type") == "text"
+    ]
+    return "\n".join(parts)
+
+
+def _dedup_argument(tool: Optional[Tool], fixture: Fixture) -> Optional[str]:
+    names: list[str] = list(fixture.arguments)
+    if tool is not None:
+        properties = tool.input_schema.get("properties")
+        if isinstance(properties, dict):
+            names.extend(properties)
+    for name in names:
+        if name.lower().replace("-", "_") in DEDUP_ARGUMENT_HINTS:
+            return name
+    return None
+
+
+def _annotation_violations(
+    tool: Optional[Tool],
+    base: dict[str, Any],
+    multiplicities: list[str],
+    mode: taxonomy.FaultMode,
+) -> list[str]:
+    """Hints that the measured behaviour contradicts.
+
+    These are the H3 findings. A `readOnlyHint` on a tool that changes the
+    backend, or an `idempotentHint` on a tool that applies twice, is a false
+    statement that clients act on: they auto-approve read-only tools and
+    replay or parallelise idempotent ones.
+
+    `destructiveHint` is deliberately not checked. The specification defines
+    it as additive versus destructive updates, and an additive write that
+    lands twice is still additive, so a duplicate is not evidence against it.
+    Reporting one would be a false finding.
+    """
+    if tool is None:
+        return []
+    violations = []
+    if tool.read_only_hint is True and base["mutating"]:
+        violations.append("readOnlyHint:true but the backend changed")
+    if tool.idempotent_hint is True and MULTIPLICITY_TWICE in multiplicities:
+        violations.append(f"idempotentHint:true but {mode.id} applied the effect twice")
+    return violations

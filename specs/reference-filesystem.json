@@ -1,0 +1,39 @@
+{
+  "server": {
+    "name": "reference-filesystem",
+    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "{root}"],
+    "version": "@modelcontextprotocol/server-filesystem (npx latest, pinned by lockfile at run time)",
+    "observer": {"kind": "filesystem"},
+    "setup": {"files": {"notes.txt": "line one\n", "ledger.txt": "opening balance 0\n"}},
+    "timeout_s": 60.0
+  },
+  "fixtures": [
+    {
+      "tool": "write_file",
+      "arguments": {"path": "{root}/notes.txt", "content": "line one\nline two\n"},
+      "probes": [["read_text_file", {"path": "{root}/notes.txt"}]],
+      "note": "overwrite: one application and two are indistinguishable by design"
+    },
+    {
+      "tool": "edit_file",
+      "arguments": {
+        "path": "{root}/ledger.txt",
+        "edits": [{"oldText": "opening balance 0", "newText": "opening balance 0\ncharge 100"}]
+      },
+      "probes": [["read_text_file", {"path": "{root}/ledger.txt"}]],
+      "note": "an insert, so a second application is visible if it is accepted"
+    },
+    {
+      "tool": "create_directory",
+      "arguments": {"path": "{root}/new/inner"},
+      "probes": [["list_directory", {"path": "{root}"}]],
+      "note": "declared idempotent; mkdir -p semantics"
+    },
+    {
+      "tool": "move_file",
+      "arguments": {"source": "{root}/notes.txt", "destination": "{root}/moved.txt"},
+      "probes": [["list_directory", {"path": "{root}"}]],
+      "note": "declared not idempotent; a second move has nothing to move"
+    }
+  ]
+}
