@@ -45,6 +45,10 @@ FAKE_SERVER = os.path.join(os.path.dirname(__file__), "fake_server.py")
         ("The result is unconfirmed.", CLAIM_UNCONFIRMED),
         ("", CLAIM_NONE),
         ("Here is a list of tables.", CLAIM_NONE),
+        # A refusal is a claim of failure. Scoring it as "no claim" shrank
+        # the denominators in a pilot run.
+        ("I cannot fulfill the request as the column is missing.", CLAIM_FAILURE),
+        ("No action was taken.", CLAIM_FAILURE),
     ],
 )
 def test_claim_parser_reads_three_states(message, expected):

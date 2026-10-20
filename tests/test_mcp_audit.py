@@ -488,3 +488,53 @@ def test_proxy_trace_records_the_injection_and_the_withheld_response(tmp_path):
     events = [record["event"] for record in iter_trace(str(trace_path))]
     assert "inject" in events
     assert "withheld" in events
+
+
+def test_sqlite_observer_ignores_create_statement_formatting(tmp_path):
+    """Regression: raw CREATE text made identical tables read as different.
+
+    An agent asked to create a table writes whatever casing it likes, which
+    was landing real episodes in the `other` bucket.
+    """
+    import sqlite3
+
+    from agentfaultlab.observers import SqliteObserver, digest
+
+    digests = []
+    for index, statement in enumerate(
+        [
+            "create table refunds (id text, amount integer)",
+            "CREATE TABLE refunds (id TEXT, amount INTEGER)",
+            "CREATE  TABLE   refunds\n  ( id  Text ,\n amount  Integer )",
+        ]
+    ):
+        path = tmp_path / f"db{index}.sqlite"
+        connection = sqlite3.connect(path)
+        connection.executescript(statement)
+        connection.commit()
+        connection.close()
+        digests.append(digest(SqliteObserver(str(path)).snapshot()))
+    assert len(set(digests)) == 1, digests
+
+
+def test_sqlite_observer_still_sees_a_real_schema_change(tmp_path):
+    import sqlite3
+
+    from agentfaultlab.observers import SqliteObserver, digest
+
+    digests = []
+    for index, statement in enumerate(
+        [
+            "create table refunds (id text, amount integer)",
+            "create table refunds (id text, amount text)",
+            "create table refunds (id text, amount integer, note text)",
+            "create table refunds (id text primary key, amount integer)",
+        ]
+    ):
+        path = tmp_path / f"db{index}.sqlite"
+        connection = sqlite3.connect(path)
+        connection.executescript(statement)
+        connection.commit()
+        connection.close()
+        digests.append(digest(SqliteObserver(str(path)).snapshot()))
+    assert len(set(digests)) == 4, digests

@@ -16,6 +16,13 @@ class SqliteObserver:
     kept as a list rather than a set so that a duplicated INSERT shows up as
     two identical rows, which is the signal the audit is looking for.
 
+    A table's shape comes from `PRAGMA table_info`, not from the text of its
+    CREATE statement. The text is not canonical: `create table t (a text)` and
+    `CREATE TABLE t (a TEXT)` describe the same table, and an agent asked to
+    create a table writes whichever it likes. Comparing the raw SQL made
+    identical outcomes read as different states, so the schema is compared as
+    a column list instead.
+
     The file is opened read only, through a URI, so snapshotting cannot
     itself create the database or take a write lock on a server that is still
     running. A missing file snapshots as absent rather than raising, because
@@ -55,15 +62,15 @@ class SqliteObserver:
     def _read(self, connection: sqlite3.Connection) -> Snapshot:
         state: Snapshot = {"__present__": True}
         rows = connection.execute(
-            "select name, sql from sqlite_master where type = 'table' "
+            "select name from sqlite_master where type = 'table' "
             "and name not like 'sqlite_%' order by name"
         ).fetchall()
-        for table, create_sql in rows:
+        for (table,) in rows:
             if self.tables is not None and table not in self.tables:
                 continue
             entry: dict[str, Any] = {}
             if self.include_schema:
-                entry["schema"] = " ".join((create_sql or "").split())
+                entry["columns"] = self._columns(connection, table)
             quoted = table.replace('"', '""')
             fetched = connection.execute(
                 f'select * from "{quoted}" limit {self.max_rows + 1}'
@@ -78,3 +85,14 @@ class SqliteObserver:
                 )
             state[table] = entry
         return state
+
+    @staticmethod
+    def _columns(connection: sqlite3.Connection, table: str) -> list[list[Any]]:
+        """A table's shape, canonically: name, declared type, not null, key."""
+        quoted = table.replace('"', '""')
+        info = connection.execute(f'pragma table_info("{quoted}")').fetchall()
+        # cid, name, type, notnull, default, pk
+        return [
+            [row[1], str(row[2] or "").upper(), int(row[3]), int(row[5])]
+            for row in info
+        ]

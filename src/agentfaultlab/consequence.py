@@ -200,14 +200,48 @@ class BudgetError(RuntimeError):
 
 # ---------------------------------------------------------------------- agents
 
-class ClaudeCodeAgent:
-    """Claude Code in headless mode, isolated from his personal setup.
+#: Built-in tools that could reach the backend without going through the MCP
+#: server under test, or that could pull in unrelated context. Denied so the
+#: only route to the measured state is an MCP tool call.
+DENIED_BUILTINS = (
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Agent",
+    "Skill",
+    "SlashCommand",
+)
 
-    `--safe-mode` drops his CLAUDE.md, skills, hooks, plugins and configured
-    MCP servers, and `--strict-mcp-config` means the only server in the
-    session is the one this harness passes in. Without both, the measurement
-    would be of his personal environment rather than of Claude Code, and the
-    results would not be reproducible by anyone else.
+
+class ClaudeCodeAgent:
+    """Claude Code in headless mode, isolated as far as its flags allow.
+
+    **`--safe-mode` cannot be used here.** Measured on 2.1.304: with
+    `--safe-mode`, no MCP tools reach the session at all, even when a server
+    is passed with `--mcp-config`, so the agent has no way to touch the
+    backend and every episode scores as "did nothing". Its help text says
+    `--mcp-config` still applies, but it does not. `--strict-mcp-config`
+    alone loads the server correctly and still ignores every other MCP
+    configuration, which is the isolation that matters most here.
+
+    What is therefore still in the session, and has to be reported as a
+    threat to validity: the user-level CLAUDE.md, skills, plugins and hooks.
+    Three things reduce it. The working directory is a fresh temporary
+    directory per episode, so no project CLAUDE.md or local settings apply.
+    `--settings '{}'` is passed to avoid adding any. And every built-in tool
+    that could reach the backend without going through MCP is denied, so the
+    MCP server is the only route to the state being measured: without that,
+    the agent reaches for `sqlite3` in a shell and the episode measures Bash
+    rather than a tool call.
+
+    DECISIONS.md Q3 approved this arm with `--safe-mode --strict-mcp-config`.
+    That combination does not work, so the deviation is recorded here and
+    raised in QUESTIONS.md rather than applied silently.
 
     Results are labelled "Claude Code <version> (model <m>)", never as the raw
     model, because a harness with its own system prompt, tool loop and
@@ -220,26 +254,39 @@ class ClaudeCodeAgent:
         model: str = "sonnet",
         server_name: str = "target",
         max_turns: int = 12,
-        timeout_s: float = 300.0,
+        timeout_s: float = 420.0,
         binary: str = "claude",
+        tool_timeout_ms: int = 20000,
     ) -> None:
         self.model = model
         self.server_name = server_name
         self.max_turns = max_turns
         self.timeout_s = timeout_s
         self.binary = binary
+        # The client's own tool timeout is an experimental variable, not a
+        # detail: a lost response is only ambiguous once the client gives up
+        # waiting. Left at its default, Claude Code waited past a 300s episode
+        # limit on every F1 episode and produced no final message at all, so
+        # the write had landed and the agent had said nothing. Setting it
+        # explicitly makes the condition reproducible and the number
+        # reportable.
+        self.tool_timeout_ms = tool_timeout_ms
         self.version = _claude_version(binary)
-        self.name = f"claude-code {self.version} (model {model})"
+        self.name = (
+            f"claude-code {self.version} (model {model}, "
+            f"tool timeout {tool_timeout_ms}ms)"
+        )
 
     def run(self, instruction: str, mcp_config_path: str, cwd: str) -> dict[str, Any]:
         command = [
             self.binary,
             "-p",
             instruction,
-            "--safe-mode",
             "--strict-mcp-config",
             "--mcp-config",
             mcp_config_path,
+            "--settings",
+            "{}",
             "--output-format",
             "json",
             "--model",
@@ -248,6 +295,8 @@ class ClaudeCodeAgent:
             str(self.max_turns),
             "--allowed-tools",
             f"mcp__{self.server_name}",
+            "--disallowed-tools",
+            " ".join(DENIED_BUILTINS),
         ]
         try:
             completed = subprocess.run(
@@ -256,6 +305,14 @@ class ClaudeCodeAgent:
                 text=True,
                 timeout=self.timeout_s,
                 cwd=cwd,
+                # Without this it waits on inherited stdin and warns that no
+                # data arrived, delaying every episode by seconds.
+                stdin=subprocess.DEVNULL,
+                env={
+                    **os.environ,
+                    "MCP_TOOL_TIMEOUT": str(self.tool_timeout_ms),
+                    "MCP_TIMEOUT": str(max(self.tool_timeout_ms, 30000)),
+                },
             )
         except subprocess.TimeoutExpired:
             return {"text": "", "turns": None, "error": "agent timed out"}
@@ -273,10 +330,24 @@ class ClaudeCodeAgent:
             return {"text": raw[:4000], "turns": None, "error": None}
         if isinstance(payload, list):
             payload = payload[-1] if payload else {}
+        # A permission denial means the isolation is misconfigured, not that
+        # the agent chose not to act, so it is surfaced rather than scored as
+        # a quiet failure.
+        denials = payload.get("permission_denials") or []
+        denied = sorted(
+            {
+                str(entry.get("tool_name") or entry)
+                for entry in denials
+                if isinstance(entry, (dict, str))
+            }
+        )
+        error = payload.get("error") if payload.get("is_error") else None
+        if denied and not error:
+            error = f"permission denied for: {', '.join(denied)}"
         return {
             "text": str(payload.get("result") or ""),
             "turns": payload.get("num_turns"),
-            "error": payload.get("error") if payload.get("is_error") else None,
+            "error": error,
         }
 
 
@@ -321,6 +392,20 @@ FAILURE_MARKERS = (
     "error occurred",
     "did not succeed",
     "no changes were made",
+    # Added after a pilot run: a local model refused several tasks with
+    # "I cannot fulfill the request", which the parser scored as no claim at
+    # all. A refusal is a claim of failure, and leaving it unmatched would
+    # have quietly shrunk every denominator.
+    "cannot fulfill",
+    "could not fulfill",
+    "can't fulfill",
+    "unable to fulfill",
+    "cannot proceed",
+    "could not proceed",
+    "cannot complete",
+    "did not make any changes",
+    "no action was taken",
+    "nothing was recorded",
 )
 
 SUCCESS_MARKERS = (
