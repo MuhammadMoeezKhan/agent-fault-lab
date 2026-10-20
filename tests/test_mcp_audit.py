@@ -16,6 +16,9 @@ import pytest
 
 from agentfaultlab.audit import (
     DUPLICATED,
+    MECHANISM_ABSORBED,
+    MECHANISM_NONE,
+    MECHANISM_REJECTED,
     SAFE,
     Audit,
     Fixture,
@@ -360,6 +363,42 @@ def test_audit_flags_the_unconfirmable_tool_that_claims_read_only():
     assert verdict.confirmable is False
     assert verdict.caller_left_unsure is True
     assert "readOnlyHint:true but the backend changed" in verdict.annotation_violations
+
+
+def test_safe_by_rejection_is_not_reported_as_the_same_pass_as_dedup():
+    """A refused repeat keeps the state right but leaves the agent guessing."""
+    audit = Audit(make_target(), repeats=2)
+    tools = {tool.name: tool for tool in audit.list_tools()}
+
+    rejecting = audit.run_tool(
+        Fixture(tool="create_file", arguments={"path": "a.txt", "text": "x"}),
+        tools["create_file"],
+        modes=["F1"],
+    )[0]
+    assert rejecting.verdict == SAFE
+    assert rejecting.safety_mechanism == MECHANISM_REJECTED
+    assert any("refused the repeat" in note for note in rejecting.notes)
+
+    deduplicating = audit.run_tool(
+        Fixture(
+            tool="append_with_key",
+            arguments={"path": "log.txt", "line": "x", "idempotency_key": "k-1"},
+        ),
+        tools["append_with_key"],
+        modes=["F1"],
+    )[0]
+    assert deduplicating.verdict == SAFE
+    assert deduplicating.safety_mechanism == MECHANISM_ABSORBED
+
+
+def test_duplicating_tool_has_no_safety_mechanism():
+    audit = Audit(make_target(), repeats=1)
+    verdict = audit.run_tool(
+        Fixture(tool="append_line", arguments={"path": "log.txt", "line": "x"}),
+        modes=["F1"],
+    )[0]
+    assert verdict.verdict == DUPLICATED
+    assert verdict.safety_mechanism == MECHANISM_NONE
 
 
 def test_control_fault_is_safe_for_the_duplicating_tool():

@@ -1,0 +1,73 @@
+{
+  "server": {
+    "name": "community-sqlite",
+    "command": [
+      "npx",
+      "-y",
+      "mcp-server-sqlite-npx",
+      "{root}/app.db"
+    ],
+    "version": "mcp-server-sqlite-npx 0.8.x (npx latest at run time)",
+    "observer": {
+      "kind": "sqlite",
+      "path": "app.db"
+    },
+    "setup": {
+      "sqlite": [
+        {
+          "path": "app.db",
+          "sql": "create table charges (id text, amount integer); create table audit_log (entry text); insert into charges (id, amount) values ('INV-0', 50);"
+        }
+      ]
+    },
+    "timeout_s": 90.0
+  },
+  "fixtures": [
+    {
+      "tool": "write_query",
+      "arguments": {
+        "query": "insert into charges (id, amount) values ('INV-1', 100)"
+      },
+      "probes": [
+        [
+          "read_query",
+          {
+            "query": "select id, amount from charges"
+          }
+        ]
+      ],
+      "note": "an unkeyed INSERT: the canonical duplicate-effect shape",
+      "id": "insert_charge"
+    },
+    {
+      "tool": "write_query",
+      "arguments": {
+        "query": "update charges set amount = 250 where id = 'INV-0'"
+      },
+      "probes": [
+        [
+          "read_query",
+          {
+            "query": "select id, amount from charges"
+          }
+        ]
+      ],
+      "note": "a set-valued UPDATE, for the semantics comparison in H1b",
+      "id": "update_charge_amount"
+    },
+    {
+      "tool": "create_table",
+      "arguments": {
+        "query": "create table refunds (id text, amount integer)"
+      },
+      "probes": [
+        [
+          "list_tables",
+          {}
+        ]
+      ],
+      "note": "DDL; a repeat should be refused by the backend",
+      "id": "create_refunds_table"
+    }
+  ]
+}

@@ -8,7 +8,14 @@ from typing import Any, Iterable, Optional, Sequence
 
 from .mcp import taxonomy
 
-from .audit import DUPLICATED, NOT_MUTATING, SAFE, ToolVerdict
+from .audit import (
+    DUPLICATED,
+    MECHANISM_ABSORBED,
+    MECHANISM_REJECTED,
+    NOT_MUTATING,
+    SAFE,
+    ToolVerdict,
+)
 
 #: F7 fails before the server is reached, so a duplicate there is a harness
 #: bug rather than a finding. It is reported separately and never counted in
@@ -18,8 +25,10 @@ CONTROL_FAULT = "F7"
 COLUMNS = (
     "server",
     "tool",
+    "fixture",
     "fault",
     "verdict",
+    "safety_mechanism",
     "multiplicities",
     "mutating",
     "repeat_distinguishable",
@@ -62,9 +71,11 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
     speak about, which would understate the problem.
     """
     rows = list(verdicts)
-    by_tool: dict[tuple[str, str], list[ToolVerdict]] = {}
+    # Keyed by fixture, not by tool: one tool with two fixtures is two units
+    # of analysis, because they can behave differently under the same fault.
+    by_tool: dict[tuple[str, str, str], list[ToolVerdict]] = {}
     for row in rows:
-        by_tool.setdefault((row.server, row.tool), []).append(row)
+        by_tool.setdefault((row.server, row.tool, row.fixture), []).append(row)
 
     mutating = {key: group for key, group in by_tool.items() if group[0].mutating}
     testable = {
@@ -92,13 +103,28 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         hits = [row for row in subject if row.verdict == DUPLICATED]
         per_fault[fault] = _rate(len(hits), len(subject))
 
+    safe_tools = {
+        key for key, group in mutating.items() if any(row.verdict == SAFE for row in group)
+    }
+    rejected = {
+        key
+        for key, group in mutating.items()
+        if any(row.safety_mechanism == MECHANISM_REJECTED for row in group)
+    }
+    absorbed = {
+        key
+        for key, group in mutating.items()
+        if any(row.safety_mechanism == MECHANISM_ABSORBED for row in group)
+    }
+
     control_failures = [
         row for row in rows if row.fault == CONTROL_FAULT and row.verdict == DUPLICATED
     ]
 
     return {
         "verdicts": len(rows),
-        "tools": len(by_tool),
+        "tools": len({(row.server, row.tool) for row in rows}),
+        "fixtures": len(by_tool),
         "mutating": len(mutating),
         "duplicate_testable": len(testable),
         "duplicated": len(duplicated),
@@ -108,6 +134,10 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         "unconfirmable_rate": _rate(len(unconfirmable), len(mutating)),
         "with_dedup_argument": len(with_dedup),
         "dedup_rate": _rate(len(with_dedup), len(mutating)),
+        "safe_tools": len(safe_tools),
+        "safe_by_rejection": len(rejected),
+        "safe_by_rejection_rate": _rate(len(rejected), len(safe_tools)),
+        "safe_by_absorption": len(absorbed),
         "annotation_violations": len(violating),
         "nondeterministic": len(flaky),
         "control_failures": len(control_failures),
@@ -131,14 +161,19 @@ def to_markdown(
         "clean baselines (one application, two applications). No verdict "
         "reads what the tool or the agent reported. Rates are per tool.",
         "",
-        f"- tools audited: {stats['tools']}, of which mutating: {stats['mutating']}",
+        f"- tools audited: {stats['tools']}, over {stats['fixtures']} fixtures, "
+        f"of which mutating: {stats['mutating']}",
         f"- duplicate effect under at least one fault: {stats['duplicate_rate']} "
         f"of the {stats['duplicate_testable']} mutating "
-        f"{'tool' if stats['duplicate_testable'] == 1 else 'tools'} where one "
-        "application is distinguishable from two",
+        f"{'fixture' if stats['duplicate_testable'] == 1 else 'fixtures'} where "
+        "one application is distinguishable from two",
         f"- unconfirmable through the server's own read tools: "
-        f"{stats['unconfirmable_rate']} of mutating tools",
-        f"- taking a deduplication argument: {stats['dedup_rate']} of mutating tools",
+        f"{stats['unconfirmable_rate']} of mutating fixtures",
+        f"- taking a deduplication argument: {stats['dedup_rate']} of mutating "
+        "fixtures",
+        f"- safe only because the backend refused the repeat: "
+        f"{stats['safe_by_rejection_rate']} of the mutating fixtures that came "
+        "out safe (the agent still gets an error it cannot interpret)",
         f"- tools contradicting their own annotations: {stats['annotation_violations']}",
         f"- nondeterministic rows (treat as unproven): {stats['nondeterministic']}",
     ]
@@ -162,8 +197,9 @@ def to_markdown(
             lines.append(f"- {fault} ({mode.name}): {rate}")
     lines += [
         "",
-        "| server | tool | fault | verdict | repeats | confirmable | hints |",
-        "|---|---|---|---|---|---|---|",
+        "| server | fixture | tool | fault | verdict | how | repeats "
+        "| confirmable | hints |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for row in verdicts:
         hints = []
@@ -174,8 +210,9 @@ def to_markdown(
         flag = " (violated)" if row.annotation_violations else ""
         confirmable = {True: "yes", False: "no", None: "not probed"}[row.confirmable]
         lines.append(
-            f"| {row.server} | `{row.tool}` | {row.fault} | {row.verdict} "
-            f"| {','.join(row.multiplicities)} | {confirmable} "
+            f"| {row.server} | {row.fixture} | `{row.tool}` | {row.fault} "
+            f"| {row.verdict} "
+            f"| {row.safety_mechanism} | {','.join(row.multiplicities)} | {confirmable} "
             f"| {' '.join(hints) or 'none'}{flag} |"
         )
     violations = [row for row in verdicts if row.annotation_violations]
@@ -183,18 +220,21 @@ def to_markdown(
         lines += ["", "## Annotation violations", ""]
         for row in violations:
             for violation in row.annotation_violations:
-                lines.append(f"- `{row.server}` / `{row.tool}` ({row.fault}): {violation}")
+                lines.append(
+                    f"- `{row.server}` / `{row.tool}` ({row.fixture}, {row.fault}): "
+                    f"{violation}"
+                )
     # Notes repeat across a tool's fault rows, so they are listed once per tool.
     seen: dict[str, list[str]] = {}
     for row in verdicts:
         for note in row.notes:
-            seen.setdefault(row.tool, [])
-            if note not in seen[row.tool]:
-                seen[row.tool].append(note)
+            seen.setdefault(row.fixture, [])
+            if note not in seen[row.fixture]:
+                seen[row.fixture].append(note)
     if seen:
         lines += ["", "## Notes", ""]
-        for tool, notes in seen.items():
-            lines.append(f"- `{tool}`: {'; '.join(notes)}")
+        for fixture, notes in seen.items():
+            lines.append(f"- {fixture}: {'; '.join(notes)}")
     return "\n".join(lines) + "\n"
 
 

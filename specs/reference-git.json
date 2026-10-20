@@ -1,0 +1,88 @@
+{
+  "server": {
+    "name": "reference-git",
+    "command": [
+      "uvx",
+      "mcp-server-git",
+      "--repository",
+      "{root}/repo"
+    ],
+    "version": "mcp-server-git (uvx latest at run time)",
+    "observer": {
+      "kind": "git",
+      "path": "repo"
+    },
+    "setup": {
+      "git": {
+        "path": "repo",
+        "message": "seed",
+        "stage": {
+          "charge.txt": "charge 100 for INV-1\n"
+        },
+        "untracked": {
+          "extra.txt": "charge 250 for INV-2\n"
+        }
+      },
+      "files": {
+        "repo/README.md": "audit fixture repository\n"
+      }
+    },
+    "timeout_s": 90.0
+  },
+  "fixtures": [
+    {
+      "tool": "git_commit",
+      "arguments": {
+        "repo_path": "{root}/repo",
+        "message": "record charge for INV-1"
+      },
+      "probes": [
+        [
+          "git_log",
+          {
+            "repo_path": "{root}/repo"
+          }
+        ]
+      ],
+      "note": "a commit is an append to history; the index is empty on a repeat",
+      "id": "commit_staged"
+    },
+    {
+      "tool": "git_add",
+      "arguments": {
+        "repo_path": "{root}/repo",
+        "files": [
+          "extra.txt"
+        ]
+      },
+      "probes": [
+        [
+          "git_status",
+          {
+            "repo_path": "{root}/repo"
+          }
+        ]
+      ],
+      "note": "declared idempotent; stages an untracked file, and takes a list so F5 applies",
+      "id": "add_file"
+    },
+    {
+      "tool": "git_create_branch",
+      "arguments": {
+        "repo_path": "{root}/repo",
+        "branch_name": "release"
+      },
+      "probes": [
+        [
+          "git_branch",
+          {
+            "repo_path": "{root}/repo",
+            "branch_type": "local"
+          }
+        ]
+      ],
+      "note": "declared not idempotent; a repeat finds the branch already there",
+      "id": "create_branch"
+    }
+  ]
+}

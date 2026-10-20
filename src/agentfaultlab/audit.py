@@ -57,6 +57,18 @@ MULTIPLICITY_ONCE = "once"
 MULTIPLICITY_TWICE = "twice"
 MULTIPLICITY_OTHER = "other"
 
+#: How a tool that came out SAFE achieved it. The distinction matters: a tool
+#: that is safe only because the backend refused the second call still hands
+#: the agent an error it cannot interpret, because "already applied" and
+#: "failed" arrive looking the same after an ambiguous timeout.
+MECHANISM_ABSORBED = "absorbed_repeat"
+MECHANISM_REJECTED = "backend_rejected_repeat"
+MECHANISM_NONE = "none"
+#: The fault left the caller believing it had succeeded, so no retry was made
+#: and the question of absorbing a repeat never arose.
+MECHANISM_NO_RETRY = "no_retry_needed"
+MECHANISM_UNKNOWN = "unknown"
+
 SAFE = "SAFE"
 DUPLICATED = "DUPLICATED"
 LOST = "LOST"
@@ -110,6 +122,15 @@ class Fixture:
     arguments: dict[str, Any] = field(default_factory=dict)
     probes: tuple[tuple[str, dict[str, Any]], ...] = ()
     note: str = ""
+    #: Distinguishes two fixtures for the same tool. One SQL write tool can
+    #: be an INSERT in one fixture and an UPDATE in another, and those behave
+    #: differently under a fault, so they must never aggregate together: the
+    #: unit of analysis is (server, tool, fixture, fault mode).
+    id: str = ""
+
+    @property
+    def identity(self) -> str:
+        return self.id or self.tool
 
     def resolve(self, root: str) -> dict[str, Any]:
         return _substitute(self.arguments, root)
@@ -140,6 +161,10 @@ class TrialResult:
     calls: list[ToolCall] = field(default_factory=list)
     error: Optional[str] = None
     snapshot: Optional[Snapshot] = None
+    #: Whether a retry was made, and whether the server refused it. A refusal
+    #: is how most tools end up safe without deduplicating anything.
+    retry_attempted: bool = False
+    retry_rejected: bool = False
 
 
 @dataclass
@@ -148,8 +173,10 @@ class ToolVerdict:
 
     server: str
     tool: str
+    fixture: str
     fault: str
     verdict: str
+    safety_mechanism: str
     multiplicities: list[str]
     mutating: bool
     repeat_distinguishable: bool
@@ -166,8 +193,10 @@ class ToolVerdict:
         return {
             "server": self.server,
             "tool": self.tool,
+            "fixture": self.fixture,
             "fault": self.fault,
             "verdict": self.verdict,
+            "safety_mechanism": self.safety_mechanism,
             "multiplicities": ",".join(self.multiplicities),
             "mutating": self.mutating,
             "repeat_distinguishable": self.repeat_distinguishable,
@@ -277,10 +306,15 @@ class Audit:
                     call = session.call_tool(fixture.tool, arguments, attempt=attempt)
                     result.calls.append(call)
                 if retry_if_unsure and result.calls and not result.calls[-1].caller_saw_success:
-                    result.calls.append(
-                        session.call_tool(
-                            fixture.tool, arguments, attempt=len(result.calls) + 1
-                        )
+                    retry = session.call_tool(
+                        fixture.tool, arguments, attempt=len(result.calls) + 1
+                    )
+                    result.calls.append(retry)
+                    result.retry_attempted = True
+                    # An in-band `isError` result counts as a refusal too:
+                    # MCP servers report tool failures inside a success frame.
+                    result.retry_rejected = retry.error is not None or (
+                        retry.result is not None and bool(retry.result.get("isError"))
                     )
                 if settle_s:
                     # F3's held call has to land before the snapshot is taken,
@@ -365,6 +399,8 @@ class Audit:
             multiplicities: list[str] = []
             unsure = False
             notes: list[str] = []
+            rejections = 0
+            retries = 0
             for _ in range(self.repeats):
                 plan = FaultPlan.parse(f"{mode.id}:{fixture.tool}@1")
                 settle = self.settle_s + plan.delay_s if mode.id == "F3" else 0.0
@@ -378,6 +414,8 @@ class Audit:
                 )
                 if trial.error:
                     notes.append(trial.error)
+                retries += int(trial.retry_attempted)
+                rejections += int(trial.retry_rejected)
                 multiplicities.append(
                     classify(after, base["s0"], base["s1"], base["s2"])
                 )
@@ -394,6 +432,12 @@ class Audit:
                     "deduplication); excluded from duplicate-rate denominators"
                 )
             verdict = self._verdict(mode, multiplicities, base, notes)
+            mechanism = _mechanism(verdict, retries, rejections)
+            if mechanism == MECHANISM_REJECTED:
+                notes.append(
+                    "safe only because the backend refused the repeat, so the "
+                    "agent receives an error it cannot tell from a real failure"
+                )
             violations = _annotation_violations(tool, base, multiplicities, mode)
             if (
                 tool is not None
@@ -412,8 +456,10 @@ class Audit:
                 ToolVerdict(
                     server=self.target.name,
                     tool=fixture.tool,
+                    fixture=fixture.identity,
                     fault=mode.id,
                     verdict=verdict,
+                    safety_mechanism=mechanism,
                     multiplicities=multiplicities,
                     mutating=base["mutating"],
                     repeat_distinguishable=base["repeat_distinguishable"],
@@ -453,6 +499,33 @@ class Audit:
         if observed == {MULTIPLICITY_NONE} and expected == MULTIPLICITY_ONCE:
             return LOST
         return DIVERGED
+
+
+def _mechanism(verdict: str, retries: int, rejections: int) -> str:
+    """Why a SAFE verdict came out safe.
+
+    `absorbed_repeat` means the repeat was accepted and left no trace: an
+    overwrite, or real deduplication. `backend_rejected_repeat` means the
+    second call was refused, which keeps the state correct but passes the
+    ambiguity on to the agent. Tools that duplicated get `none`, and a tool
+    that was never retried (the fault left the caller believing it
+    succeeded) gets `no_retry_needed`.
+
+    One caveat: under F3 the retry runs before the held call lands, so the
+    label describes what the retry met, not what the late duplicate met. The
+    verdict is unaffected, since that still comes from the end state.
+    """
+    if verdict in (DUPLICATED, DIVERGED, LOST):
+        return MECHANISM_NONE
+    if verdict != SAFE:
+        return MECHANISM_UNKNOWN
+    if retries == 0:
+        return MECHANISM_NO_RETRY
+    if rejections == retries:
+        return MECHANISM_REJECTED
+    if rejections == 0:
+        return MECHANISM_ABSORBED
+    return MECHANISM_UNKNOWN
 
 
 def classify(final: Snapshot, s0: Snapshot, s1: Snapshot, s2: Snapshot) -> str:

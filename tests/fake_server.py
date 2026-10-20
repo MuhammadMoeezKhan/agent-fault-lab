@@ -10,6 +10,9 @@ cover every verdict the audit can reach:
   with the same key is a no-op. The audit should find SAFE.
 * `write_file`: overwrites, so one application and two are indistinguishable.
   The audit should report NATURALLY_IDEMPOTENT, not a pass.
+* `create_file`: refuses to overwrite, so a retry fails and the state stays
+  correct. The audit should find SAFE with the mechanism
+  `backend_rejected_repeat`, not the same pass as a deduplicating tool.
 * `secret_append`: appends to a file no read tool exposes, and claims
   `readOnlyHint`. The audit should find it mutating, UNCONFIRMABLE through
   the probes, and in violation of its own hint.
@@ -83,6 +86,16 @@ TOOLS = [
         "annotations": {},
     },
     {
+        "name": "create_file",
+        "description": "Create a file. Fails if it already exists.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["path", "text"],
+        },
+        "annotations": {"idempotentHint": False},
+    },
+    {
         "name": "read_file",
         "description": "Read a file.",
         "inputSchema": {
@@ -146,6 +159,14 @@ def call_tool(name: str, arguments: dict) -> str:
         with open(target, "w", encoding="utf-8") as handle:
             handle.write(arguments["text"])
         return f"wrote {arguments['path']}"
+    if name == "create_file":
+        target = _safe(arguments["path"])
+        if os.path.exists(target):
+            raise ValueError(f"{arguments['path']} already exists")
+        os.makedirs(os.path.dirname(target) or os.getcwd(), exist_ok=True)
+        with open(target, "x", encoding="utf-8") as handle:
+            handle.write(arguments["text"])
+        return f"created {arguments['path']}"
     if name == "secret_append":
         return _append(LEDGER, arguments["line"])
     if name == "append_many":

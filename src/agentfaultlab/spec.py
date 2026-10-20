@@ -22,7 +22,9 @@ Everything that could differ between machines (paths, ports) is written as
       ]
     }
 
-The setup block is deliberately small: files, a git repository, and SQL run
+The setup block is deliberately small: files, a git repository (optionally
+with files staged but uncommitted, which a commit tool needs, or left
+untracked, which a staging tool needs), and SQL run
 against a SQLite file. Anything more is a Python spec, which the loader also
 accepts (a module exposing `TARGET` and `FIXTURES`).
 """
@@ -38,14 +40,20 @@ from typing import Any, Callable, Optional
 from .audit import Fixture, ServerTarget
 from .observers import CompositeObserver, FilesystemObserver, GitObserver, SqliteObserver
 
-#: A deterministic identity, so a git-backed trial is byte stable across runs.
+#: A fixed identity, so a commit does not fail for want of a user.name on a
+#: machine that has none.
+#:
+#: Commit *dates* are deliberately not pinned. GitObserver identifies a commit
+#: by (subject, tree, parent count) rather than by hash, so a moving timestamp
+#: cannot make two equivalent trials differ, and pinning the dates actively
+#: breaks servers that read them through a library: GitPython rejects the ISO
+#: 8601 form with a colon in the offset and fails the commit outright. Pin them
+#: in a spec's own `env` if an observer is ever added that digests .git objects.
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "agent-fault-lab",
     "GIT_AUTHOR_EMAIL": "audit@example.invalid",
     "GIT_COMMITTER_NAME": "agent-fault-lab",
     "GIT_COMMITTER_EMAIL": "audit@example.invalid",
-    "GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
-    "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
 }
 
 
@@ -97,17 +105,48 @@ def _setup_factory(config: Optional[dict[str, Any]]) -> Optional[Callable[[str],
             repo = os.path.join(root, git.get("path", ""))
             os.makedirs(repo, exist_ok=True)
             environment = {**os.environ, **GIT_ENV}
-            for args in (
-                ["init", "-q", "-b", "main"],
-                *( [["add", "-A"], ["commit", "-qm", git.get("message", "seed")]]
-                   if git.get("commit", True) else [] ),
-            ):
-                subprocess.run(
+
+            def run(*args: str) -> None:
+                completed = subprocess.run(
                     ["git", "-C", repo, *args],
-                    check=True,
                     capture_output=True,
+                    text=True,
                     env=environment,
                 )
+                if completed.returncode != 0:
+                    # A seed commit with nothing staged is the common mistake,
+                    # so say that rather than surfacing a CalledProcessError
+                    # from somewhere inside trial setup.
+                    detail = (completed.stderr or completed.stdout).strip()
+                    raise SpecError(
+                        f"setup step `git {' '.join(args)}` failed in {repo}: "
+                        f"{detail or completed.returncode}"
+                    )
+
+            run("init", "-q", "-b", git.get("branch", "main"))
+            if git.get("commit", True):
+                run("add", "-A")
+                run("commit", "-qm", git.get("message", "seed"))
+            # Files written and staged but left uncommitted. A commit tool can
+            # only be audited when there is something staged for it to commit,
+            # and whether a repeat finds the index empty is the behaviour under
+            # test.
+            def write(relative: str, content: str) -> None:
+                path = os.path.join(repo, relative)
+                os.makedirs(os.path.dirname(path) or repo, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(content)
+
+            staged = git.get("stage") or {}
+            for relative, content in staged.items():
+                write(relative, content)
+            if staged:
+                run("add", *staged.keys())
+            # Written after the seed commit and left untracked, so a tool that
+            # stages files has something to stage. Anything in `setup.files`
+            # would have been swept into the seed commit instead.
+            for relative, content in (git.get("untracked") or {}).items():
+                write(relative, content)
         for entry in config.get("sqlite") or []:
             path = os.path.join(root, entry["path"])
             os.makedirs(os.path.dirname(path) or root, exist_ok=True)
@@ -162,11 +201,37 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
                     (name, args) for name, args in (raw.get("probes") or [])
                 ),
                 note=raw.get("note", ""),
+                id=raw.get("id", ""),
             )
         )
+    _assign_ids(fixtures)
     if not fixtures:
         raise SpecError("the spec needs at least one fixture")
     return target, fixtures
+
+
+def _assign_ids(fixtures: list[Fixture]) -> None:
+    """Give every fixture a unique id, defaulting to the tool name.
+
+    Two fixtures for one tool would otherwise aggregate together in reports,
+    which is wrong whenever they exercise different semantics.
+    """
+    used: set[str] = set()
+    for fixture in fixtures:
+        if fixture.id:
+            if fixture.id in used:
+                raise SpecError(f"duplicate fixture id {fixture.id!r}")
+            used.add(fixture.id)
+    counters: dict[str, int] = {}
+    for fixture in fixtures:
+        if fixture.id:
+            continue
+        candidate = fixture.tool
+        while candidate in used:
+            counters[fixture.tool] = counters.get(fixture.tool, 1) + 1
+            candidate = f"{fixture.tool}#{counters[fixture.tool]}"
+        fixture.id = candidate
+        used.add(candidate)
 
 
 def _load_python(path: str) -> tuple[ServerTarget, list[Fixture]]:
