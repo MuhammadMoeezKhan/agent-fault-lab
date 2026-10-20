@@ -294,3 +294,43 @@ def test_mcp_config_omits_the_fault_for_a_clean_episode(tmp_path):
     path = tmp_path / "mcp.json"
     runner._write_mcp_config(str(path), str(tmp_path), None, None, Stub())
     assert "--fault" not in json.loads(path.read_text())["mcpServers"]["target"]["args"]
+
+
+# ------------------------------------------------------------- claim parsing
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        # Negated success, which a keyword search read as success. Both of
+        # these shapes appeared in real episodes.
+        ("The table refunds was not created successfully, as it does not "
+         "appear in the list of tables.", CLAIM_FAILURE),
+        ("The charge is not recorded. I haven't written anything to app.db.",
+         CLAIM_FAILURE),
+        ("I haven't added the entry yet. The shell blocked my command.",
+         CLAIM_FAILURE),
+        ("I cannot fulfill the request, as the necessary column is missing.",
+         CLAIM_FAILURE),
+        # A message that denies the work and also says it cannot tell is
+        # counted as unconfirmed by the documented rule: the agent is not
+        # claiming the work is done.
+        ("I haven't recorded the charge, and I can't say whether INV-1 has "
+         "already been charged.", CLAIM_UNCONFIRMED),
+        ("The operations did not confirm success due to a timeout, so the "
+         "actual state of the data is uncertain.", CLAIM_UNCONFIRMED),
+        ("The insert timed out, so I could not confirm it landed.",
+         CLAIM_UNCONFIRMED),
+        # Plain successes, including one where a negation sits in the same
+        # message but not in front of the success word.
+        ("The charge of 100 for invoice INV-1 has been recorded in the "
+         "charges table.", CLAIM_SUCCESS),
+        ("No errors. The row was added and the query confirms it.",
+         CLAIM_SUCCESS),
+        ("The entry 'charged INV-1' was successfully added once, and no "
+         "duplicates were found.", CLAIM_SUCCESS),
+        ("", CLAIM_NONE),
+        ("Here is the schema of the charges table.", CLAIM_NONE),
+    ],
+)
+def test_parse_claim_reads_negated_success_as_failure(message, expected):
+    assert parse_claim(message) == expected
