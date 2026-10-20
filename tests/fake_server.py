@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 TOOLS = [
     {
@@ -96,6 +97,21 @@ TOOLS = [
         "annotations": {"idempotentHint": False},
     },
     {
+        "name": "append_stamped_line",
+        "description": (
+            "Append a line with a nanosecond timestamp in it, which makes the "
+            "backend state differ between two identical clean runs. Stands in "
+            "for a real server whose store is not canonically observable "
+            "(an append only log with timestamps, for instance)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "line": {"type": "string"}},
+            "required": ["path", "line"],
+        },
+        "annotations": {"readOnlyHint": False},
+    },
+    {
         "name": "read_file",
         "description": "Read a file.",
         "inputSchema": {
@@ -153,6 +169,10 @@ def call_tool(name: str, arguments: dict) -> str:
         if _seen_key(arguments["idempotency_key"]):
             return "already applied"
         return _append(arguments["path"], arguments["line"])
+    if name == "append_stamped_line":
+        return _append(
+            arguments["path"], f"{arguments['line']} at {time.time_ns()}"
+        )
     if name == "write_file":
         target = _safe(arguments["path"])
         os.makedirs(os.path.dirname(target), exist_ok=True)

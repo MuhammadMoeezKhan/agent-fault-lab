@@ -74,6 +74,11 @@ DUPLICATED = "DUPLICATED"
 LOST = "LOST"
 DIVERGED = "DIVERGED"
 NOT_MUTATING = "NOT_MUTATING"
+#: The baselines themselves were not reproducible, so no verdict is possible.
+#: A server whose store is not byte comparable between two identical clean
+#: runs (an append only log with timestamps in it) cannot be audited this way,
+#: and saying so is better than reporting DIVERGED and calling it a finding.
+UNPROVEN = "UNPROVEN"
 BROKEN = "BROKEN"
 
 
@@ -93,18 +98,54 @@ class ServerTarget:
     observer: Callable[[str], Observer]
     setup: Optional[Callable[[str], None]] = None
     env: Optional[dict[str, str]] = None
+    #: Calls that have to happen before the fixture, on every trial, because
+    #: some servers refuse to work until the session is bound to a project
+    #: (memorix needs `memorix_session_start` with a git-backed root). They
+    #: run before the first snapshot, so their effects belong to S0, and they
+    #: must not call the fixture's own tool: that would consume the fault's
+    #: first occurrence. A prelude call that fails aborts the trial rather
+    #: than letting a refused fixture read as a lost effect.
+    prelude: Sequence[tuple[str, dict[str, Any]]] = ()
     cwd_is_root: bool = True
     #: Recorded in the report so a result can be tied to a version.
     version: str = ""
     timeout_s: float = 20.0
+    #: Seconds to wait before every end-state snapshot, including the clean
+    #: baselines. A server that flushes its store asynchronously (mushroomdb
+    #: writes an append-only log) can be snapshotted before the write lands,
+    #: which made two identical clean runs produce two different S1 values:
+    #: the oracle then has no stable baseline and every verdict is noise.
+    #: This is separate from the audit's `settle_s`, which exists for F3's
+    #: deliberately late call.
+    quiesce_s: float = 0.0
 
     def resolve_command(self, root: str) -> list[str]:
-        return [part.replace("{root}", root) for part in self.command]
+        return [self._fill(part, root) for part in self.command]
 
     def resolve_env(self, root: str) -> dict[str, str]:
         return {
-            key: value.replace("{root}", root) for key, value in (self.env or {}).items()
+            key: self._fill(value, root) for key, value in (self.env or {}).items()
         }
+
+    @staticmethod
+    def _fill(text: str, root: str) -> str:
+        """`{root}` is the trial's directory; `{home}` is the real home.
+
+        A server that keeps its state in a fixed place under the home
+        directory (memorix writes `~/.memorix`) can only be isolated per
+        trial by moving HOME into the trial root. That makes every launch a
+        cold npx install unless the download cache stays where it is, which
+        is what `{home}` is for: `npm_config_cache` can point back at the
+        real cache while nothing else does.
+        """
+        return text.replace("{root}", root).replace(
+            "{home}", os.path.expanduser("~")
+        )
+
+    def resolve_prelude(self, root: str) -> list[tuple[str, dict[str, Any]]]:
+        return [
+            (tool, _substitute(arguments, root)) for tool, arguments in self.prelude
+        ]
 
 
 @dataclass
@@ -298,6 +339,7 @@ class Audit:
         )
         try:
             with self._session(root, plan) as session:
+                self._run_prelude(session, root)
                 before = observer.snapshot()
                 if probe:
                     probe_outputs["before"] = self._probe(session, fixture, root)
@@ -320,6 +362,8 @@ class Audit:
                     # F3's held call has to land before the snapshot is taken,
                     # or a late write is scored as no write at all.
                     time.sleep(settle_s)
+                if self.target.quiesce_s:
+                    time.sleep(self.target.quiesce_s)
                 if probe:
                     probe_outputs["after"] = self._probe(session, fixture, root)
                 after = observer.snapshot()
@@ -335,6 +379,15 @@ class Audit:
         result.snapshot = after
         result.snapshot_digest = digest(after)
         return result, before, after, probe_outputs
+
+    def _run_prelude(self, session: ServerSession, root: str) -> None:
+        for tool, arguments in self.target.resolve_prelude(root):
+            call = session.call_tool(tool, arguments)
+            if not call.caller_saw_success:
+                raise SessionError(
+                    f"prelude call {tool} failed on {self.target.name}: "
+                    f"{_result_text(call.result) or call.error or 'timed out'}"
+                )
 
     def _probe(
         self, session: ServerSession, fixture: Fixture, root: str
@@ -363,6 +416,13 @@ class Audit:
             fixture, condition="clean_twice", plan=None, applications=2,
             retry_if_unsure=False,
         )
+        # One application, again, on another fresh backend. If this does not
+        # match S1 then the observer is not canonical for this server and
+        # every comparison against S1 or S2 is noise.
+        _, _, after_once_again, _ = self._trial(
+            fixture, condition="clean_once_again", plan=None, applications=1,
+            retry_if_unsure=False,
+        )
         mutating = not equal(before_once, after_once)
         confirmable: Optional[bool] = None
         if fixture.probes and probes.get("before") is not None:
@@ -372,6 +432,8 @@ class Audit:
             "s1": after_once,
             "s2": after_twice,
             "mutating": mutating,
+            "s1_again": after_once_again,
+            "baseline_stable": equal(after_once, after_once_again),
             "repeat_distinguishable": not equal(after_once, after_twice),
             "confirmable": confirmable,
             "clean_once": once,
@@ -393,6 +455,37 @@ class Audit:
         base = self.baselines(fixture)
         dedup = _dedup_argument(tool, fixture)
         verdicts: list[ToolVerdict] = []
+
+        if not base["baseline_stable"]:
+            # Nothing is run: without a stable S1 there is nothing to compare
+            # against, and running the faults anyway would produce rows that
+            # read like findings.
+            return [
+                ToolVerdict(
+                    server=self.target.name,
+                    tool=fixture.tool,
+                    fixture=fixture.identity,
+                    fault=taxonomy.get(mode_name).id,
+                    verdict=UNPROVEN,
+                    safety_mechanism=MECHANISM_UNKNOWN,
+                    multiplicities=[],
+                    mutating=base["mutating"],
+                    repeat_distinguishable=base["repeat_distinguishable"],
+                    confirmable=base["confirmable"],
+                    caller_left_unsure=False,
+                    dedup_argument=dedup,
+                    read_only_hint=tool.read_only_hint if tool else None,
+                    idempotent_hint=tool.idempotent_hint if tool else None,
+                    annotation_violations=[],
+                    notes=[
+                        "two identical clean runs left different end states, so "
+                        "this server's state is not observable canonically from "
+                        "outside and no verdict is formed"
+                    ]
+                    + ([fixture.note] if fixture.note else []),
+                )
+                for mode_name in modes
+            ]
 
         for mode_name in modes:
             mode = taxonomy.get(mode_name)
@@ -432,7 +525,17 @@ class Audit:
                     "deduplication); excluded from duplicate-rate denominators"
                 )
             verdict = self._verdict(mode, multiplicities, base, notes)
-            mechanism = _mechanism(verdict, retries, rejections)
+            mechanism = _mechanism(
+                verdict, retries, rejections, base["repeat_distinguishable"]
+            )
+            if mechanism == MECHANISM_UNKNOWN and verdict == SAFE and retries:
+                notes.append(
+                    "the retry answered in a success frame and one "
+                    "application cannot be told from two, so whether the "
+                    "repeat was absorbed or refused is not decidable from "
+                    "state (a server can report a refusal in its reply text "
+                    "without setting isError)"
+                )
             if mechanism == MECHANISM_REJECTED:
                 notes.append(
                     "safe only because the backend refused the repeat, so the "
@@ -501,7 +604,12 @@ class Audit:
         return DIVERGED
 
 
-def _mechanism(verdict: str, retries: int, rejections: int) -> str:
+def _mechanism(
+    verdict: str,
+    retries: int,
+    rejections: int,
+    repeat_distinguishable: bool = True,
+) -> str:
     """Why a SAFE verdict came out safe.
 
     `absorbed_repeat` means the repeat was accepted and left no trace: an
@@ -514,6 +622,14 @@ def _mechanism(verdict: str, retries: int, rejections: int) -> str:
     One caveat: under F3 the retry runs before the held call lands, so the
     label describes what the retry met, not what the late duplicate met. The
     verdict is unaffected, since that still comes from the end state.
+
+    When one application cannot be told from two, state cannot say whether a
+    repeat was absorbed or refused, so an accepted-looking retry is
+    `unknown` rather than `absorbed_repeat`. An explicit error still counts as
+    a rejection, because that is evidence from outside the state. This came
+    from desktop-commander's `edit_block`, which answers a repeat with "exact
+    match not found" inside a success frame: the backend did refuse, the end
+    state is right, and nothing in the protocol says so.
     """
     if verdict in (DUPLICATED, DIVERGED, LOST):
         return MECHANISM_NONE
@@ -524,7 +640,7 @@ def _mechanism(verdict: str, retries: int, rejections: int) -> str:
     if rejections == retries:
         return MECHANISM_REJECTED
     if rejections == 0:
-        return MECHANISM_ABSORBED
+        return MECHANISM_ABSORBED if repeat_distinguishable else MECHANISM_UNKNOWN
     return MECHANISM_UNKNOWN
 
 

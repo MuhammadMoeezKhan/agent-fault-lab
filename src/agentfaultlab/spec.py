@@ -73,8 +73,12 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
     if kind == "sqlite":
         if "path" not in config:
             raise SpecError("a sqlite observer needs a path")
+        tables = config.get("tables")
         return lambda root: SqliteObserver(
-            os.path.join(root, config["path"]), name=config.get("name", "sqlite")
+            os.path.join(root, config["path"]),
+            name=config.get("name", "sqlite"),
+            tables=tuple(tables) if tables else None,
+            ignore_columns=tuple(config.get("ignore_columns") or ()),
         )
     if kind == "git":
         return lambda root: GitObserver(
@@ -160,6 +164,33 @@ def _setup_factory(config: Optional[dict[str, Any]]) -> Optional[Callable[[str],
     return setup
 
 
+def _prelude(raw: Any) -> tuple[tuple[str, dict[str, Any]], ...]:
+    """Parse `prelude`: calls every trial makes before the fixture.
+
+    Accepts `[["tool", {...}], ...]` or `[{"tool": ..., "arguments": {...}}]`.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise SpecError("server.prelude must be a list of calls")
+    calls: list[tuple[str, dict[str, Any]]] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            tool = entry.get("tool")
+            arguments = entry.get("arguments") or {}
+        elif isinstance(entry, (list, tuple)) and entry:
+            tool = entry[0]
+            arguments = entry[1] if len(entry) > 1 else {}
+        else:
+            raise SpecError(f"unreadable prelude call: {entry!r}")
+        if not isinstance(tool, str) or not tool:
+            raise SpecError(f"a prelude call needs a tool name: {entry!r}")
+        if not isinstance(arguments, dict):
+            raise SpecError(f"prelude arguments for {tool} must be an object")
+        calls.append((tool, arguments))
+    return tuple(calls)
+
+
 def load(path: str) -> tuple[ServerTarget, list[Fixture]]:
     """Load a spec from JSON, or from a Python module exposing TARGET/FIXTURES."""
     if path.endswith(".py"):
@@ -185,9 +216,11 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
         observer=_observer_factory(server["observer"]),
         setup=_setup_factory(server.get("setup")),
         env={**GIT_ENV, **(server.get("env") or {})},
+        prelude=_prelude(server.get("prelude")),
         cwd_is_root=bool(server.get("cwd_is_root", True)),
         version=str(server.get("version", "")),
         timeout_s=float(server.get("timeout_s", 20.0)),
+        quiesce_s=float(server.get("quiesce_s", 0.0)),
     )
     fixtures = []
     for raw in document.get("fixtures") or []:

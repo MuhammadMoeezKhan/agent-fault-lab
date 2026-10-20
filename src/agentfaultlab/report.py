@@ -14,6 +14,7 @@ from .audit import (
     MECHANISM_REJECTED,
     NOT_MUTATING,
     SAFE,
+    UNPROVEN,
     ToolVerdict,
 )
 
@@ -77,6 +78,14 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
     for row in rows:
         by_tool.setdefault((row.server, row.tool, row.fixture), []).append(row)
 
+    # A fixture whose baselines were not reproducible is left out of every
+    # denominator: the method has nothing to say about it, and counting it as
+    # safe would be the same mistake as counting it as a finding.
+    by_tool = {
+        key: group
+        for key, group in by_tool.items()
+        if not all(row.verdict == UNPROVEN for row in group)
+    }
     mutating = {key: group for key, group in by_tool.items() if group[0].mutating}
     testable = {
         key: group
@@ -94,11 +103,17 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
     with_dedup = {key for key, group in mutating.items() if group[0].dedup_argument}
     violating = {key for key, group in by_tool.items() if any(row.annotation_violations for row in group)}
     flaky = [row for row in rows if not row.deterministic]
+    unproven = [row for row in rows if row.verdict == UNPROVEN]
 
     per_fault = {}
     for fault in sorted({row.fault for row in rows if row.fault != CONTROL_FAULT}):
         subject = [
-            row for row in rows if row.fault == fault and row.mutating and row.repeat_distinguishable
+            row
+            for row in rows
+            if row.fault == fault
+            and row.mutating
+            and row.repeat_distinguishable
+            and row.verdict != UNPROVEN
         ]
         hits = [row for row in subject if row.verdict == DUPLICATED]
         per_fault[fault] = _rate(len(hits), len(subject))
@@ -140,6 +155,7 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         "safe_by_absorption": len(absorbed),
         "annotation_violations": len(violating),
         "nondeterministic": len(flaky),
+        "unproven": len(unproven),
         "control_failures": len(control_failures),
     }
 
@@ -176,6 +192,8 @@ def to_markdown(
         "out safe (the agent still gets an error it cannot interpret)",
         f"- tools contradicting their own annotations: {stats['annotation_violations']}",
         f"- nondeterministic rows (treat as unproven): {stats['nondeterministic']}",
+        f"- rows with no verdict because the clean baselines were not "
+        f"reproducible: {stats['unproven']}",
     ]
     if server_info:
         reported = (server_info.get("serverInfo") or {}) if server_info else {}

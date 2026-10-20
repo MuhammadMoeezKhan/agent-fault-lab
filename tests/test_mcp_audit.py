@@ -17,6 +17,7 @@ import pytest
 from agentfaultlab.audit import (
     DUPLICATED,
     MECHANISM_ABSORBED,
+    MECHANISM_UNKNOWN,
     MECHANISM_NONE,
     MECHANISM_REJECTED,
     SAFE,
@@ -379,6 +380,10 @@ def test_safe_by_rejection_is_not_reported_as_the_same_pass_as_dedup():
     assert rejecting.safety_mechanism == MECHANISM_REJECTED
     assert any("refused the repeat" in note for note in rejecting.notes)
 
+    # A tool that really deduplicates leaves one application looking exactly
+    # like two, so state cannot prove the repeat was absorbed rather than
+    # quietly refused. The verdict is SAFE and the mechanism is honest about
+    # not being decidable; the declared key is reported separately.
     deduplicating = audit.run_tool(
         Fixture(
             tool="append_with_key",
@@ -388,7 +393,25 @@ def test_safe_by_rejection_is_not_reported_as_the_same_pass_as_dedup():
         modes=["F1"],
     )[0]
     assert deduplicating.verdict == SAFE
-    assert deduplicating.safety_mechanism == MECHANISM_ABSORBED
+    assert deduplicating.safety_mechanism == MECHANISM_UNKNOWN
+    assert not deduplicating.repeat_distinguishable
+    assert deduplicating.dedup_argument
+
+
+def test_absorption_is_claimed_only_when_two_applications_would_have_shown():
+    """`absorbed_repeat` needs state evidence: S2 must differ from S1."""
+    audit = Audit(make_target(), repeats=1)
+    tools = {tool.name: tool for tool in audit.list_tools()}
+    absorbing = audit.run_tool(
+        Fixture(tool="write_file", arguments={"path": "a.txt", "text": "x"}),
+        tools["write_file"],
+        modes=["F1"],
+    )[0]
+    # write_file overwrites, so one application and two look the same and the
+    # mechanism is not decidable from state either.
+    assert absorbing.verdict == SAFE
+    assert not absorbing.repeat_distinguishable
+    assert absorbing.safety_mechanism in (MECHANISM_UNKNOWN,)
 
 
 def test_duplicating_tool_has_no_safety_mechanism():
@@ -538,3 +561,150 @@ def test_sqlite_observer_still_sees_a_real_schema_change(tmp_path):
         connection.close()
         digests.append(digest(SqliteObserver(str(path)).snapshot()))
     assert len(set(digests)) == 4, digests
+
+
+# -------------------------------------------------------------------- prelude
+
+def test_prelude_runs_before_the_snapshot_so_its_effect_is_part_of_s0():
+    """A prelude is session setup, not an effect under test.
+
+    memorix refuses every project-scoped tool until `memorix_session_start`
+    has bound the session to a git-backed root, so some servers cannot be
+    audited at all without this. Its writes have to land before the first
+    snapshot, or every trial would score the prelude's own effect.
+    """
+    target = make_target(
+        prelude=[("append_line", {"path": "{root}/prelude.txt", "line": "bound"})]
+    )
+    audit = Audit(target, repeats=1, settle_s=0.0)
+    fixture = Fixture(
+        tool="append_line",
+        arguments={"path": "{root}/notes.txt", "line": "one"},
+    )
+    baselines = audit.baselines(fixture)
+    s1 = baselines["s1"]
+    assert any(path.endswith("prelude.txt") for path in s1)
+    # S1 differs from S0 only by the fixture's own file.
+    s0 = baselines["s0"]
+    assert set(s1) - set(s0) == {"notes.txt"}
+
+
+def test_a_failing_prelude_aborts_the_trial_instead_of_reading_as_a_lost_effect():
+    target = make_target(
+        prelude=[("append_line", {"path": "/does/not/exist/x.txt", "line": "x"})]
+    )
+    audit = Audit(target, repeats=1, settle_s=0.0)
+    fixture = Fixture(
+        tool="append_line", arguments={"path": "{root}/notes.txt", "line": "one"}
+    )
+    result, _, _, _ = audit._trial(
+        fixture, condition="clean_once", plan=None, applications=1,
+        retry_if_unsure=False,
+    )
+    assert result.error and "prelude call append_line failed" in result.error
+
+
+# ------------------------------------------------------- sqlite ignore_columns
+
+def _db(tmp_path, statements):
+    import sqlite3
+
+    path = tmp_path / "app.db"
+    connection = sqlite3.connect(path)
+    for statement in statements:
+        connection.execute(statement)
+    connection.commit()
+    connection.close()
+    return str(path)
+
+
+def test_sqlite_observer_can_ignore_volatile_columns(tmp_path):
+    path = _db(
+        tmp_path,
+        [
+            "create table notes (id integer primary key, body text, created_at text)",
+            "insert into notes (body, created_at) values ('one', '2026-01-01T00:00:00')",
+        ],
+    )
+    strict = SqliteObserver(path).snapshot()
+    relaxed = SqliteObserver(path, ignore_columns=("id", "created_at")).snapshot()
+    assert strict["notes"]["rows"] == [[1, "one", "2026-01-01T00:00:00"]]
+    assert relaxed["notes"]["rows"] == [["one"]]
+    assert relaxed["notes"]["ignored_columns"] == ["id", "created_at"]
+    assert [column[0] for column in relaxed["notes"]["columns"]] == ["body"]
+
+
+def test_ignoring_a_row_id_still_shows_a_duplicate_as_two_rows(tmp_path):
+    path = _db(
+        tmp_path,
+        [
+            "create table notes (id integer primary key, body text)",
+            "insert into notes (body) values ('one')",
+            "insert into notes (body) values ('one')",
+        ],
+    )
+    snapshot = SqliteObserver(path, ignore_columns=("id",)).snapshot()
+    assert snapshot["notes"]["rows"] == [["one"], ["one"]]
+
+
+def test_ignore_columns_can_be_qualified_by_table(tmp_path):
+    path = _db(
+        tmp_path,
+        [
+            "create table a (seen text, body text)",
+            "create table b (seen text, body text)",
+            "insert into a values ('t', 'x')",
+            "insert into b values ('t', 'y')",
+        ],
+    )
+    snapshot = SqliteObserver(path, ignore_columns=("a.seen",)).snapshot()
+    assert snapshot["a"]["rows"] == [["x"]]
+    assert snapshot["b"]["rows"] == [["t", "y"]]
+
+
+def test_an_unreproducible_baseline_yields_no_verdict():
+    """Two identical clean runs must agree, or the oracle has no baseline.
+
+    mushroomdb keeps its graph in an append only log whose bytes differ
+    between two identical runs, so comparing a faulted end state against S1
+    or S2 produced DIVERGED rows that looked like findings. The audit now
+    says UNPROVEN and runs no fault trials.
+    """
+    from agentfaultlab.audit import UNPROVEN
+
+    audit = Audit(make_target(), repeats=2)
+    verdicts = audit.run_tool(
+        Fixture(
+            tool="append_stamped_line",
+            arguments={"path": "log.txt", "line": "charge"},
+        ),
+        modes=["F1", "F2"],
+    )
+    assert [verdict.verdict for verdict in verdicts] == [UNPROVEN, UNPROVEN]
+    assert all(
+        any("not observable canonically" in note for note in verdict.notes)
+        for verdict in verdicts
+    )
+    # No trials ran, so there are no multiplicities to report.
+    assert all(verdict.multiplicities == [] for verdict in verdicts)
+
+
+def test_unproven_rows_are_left_out_of_the_rates():
+    from agentfaultlab.audit import UNPROVEN
+    from agentfaultlab.report import summarise
+
+    audit = Audit(make_target(), repeats=1)
+    rows = audit.run_tool(
+        Fixture(tool="append_line", arguments={"path": "log.txt", "line": "x"}),
+        modes=["F1"],
+    ) + audit.run_tool(
+        Fixture(
+            tool="append_stamped_line",
+            arguments={"path": "stamped.txt", "line": "x"},
+        ),
+        modes=["F1"],
+    )
+    stats = summarise(rows)
+    assert stats["unproven"] == 1
+    # One duplicating fixture of one testable fixture, not of two.
+    assert stats["duplicate_rate"].startswith("100.0% (1/1)")

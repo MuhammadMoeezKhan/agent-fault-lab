@@ -1,0 +1,78 @@
+{
+  "server": {
+    "name": "community-desktop-commander",
+    "command": ["npx", "-y", "@wonderwhy-er/desktop-commander"],
+    "version": "desktop-commander 0.3.x (npx latest at run time)",
+    "note": "The most downloaded locally runnable server in the registry frame (about 196k weekly npm downloads). It declares readOnlyHint on all 25 tools and idempotentHint on none, so a client has nothing to decide a retry with. HOME moves into the trial root because the server writes a call log and its config under ~/.claude-server-commander.",
+    "env": {
+      "HOME": "{root}/home",
+      "npm_config_cache": "{home}/.npm",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "work",
+      "name": "work-tree"
+    },
+    "setup": {
+      "directories": ["home", "work"],
+      "files": {
+        "work/ledger.txt": "charge 50 for INV-0\n",
+        "work/config.ini": "retries = 1\n"
+      }
+    },
+    "timeout_s": 120.0
+  },
+  "fixtures": [
+    {
+      "id": "append_ledger_line",
+      "tool": "write_file",
+      "arguments": {
+        "path": "{root}/work/ledger.txt",
+        "content": "charge 100 for INV-1\n",
+        "mode": "append"
+      },
+      "probes": [
+        ["read_file", {"path": "{root}/work/ledger.txt"}]
+      ],
+      "note": "an append with no key: one tool, two modes, and this is the duplicate-prone one"
+    },
+    {
+      "id": "rewrite_ledger",
+      "tool": "write_file",
+      "arguments": {
+        "path": "{root}/work/ledger.txt",
+        "content": "charge 100 for INV-1\n",
+        "mode": "rewrite"
+      },
+      "probes": [
+        ["read_file", {"path": "{root}/work/ledger.txt"}]
+      ],
+      "note": "the same tool rewriting instead of appending, which no end state can distinguish from two applications: the H1b comparison inside one tool"
+    },
+    {
+      "id": "edit_config_value",
+      "tool": "edit_block",
+      "arguments": {
+        "file_path": "{root}/work/config.ini",
+        "old_string": "retries = 1",
+        "new_string": "retries = 2"
+      },
+      "probes": [
+        ["read_file", {"path": "{root}/work/config.ini"}]
+      ],
+      "note": "a search and replace edit: a repeat cannot find the old text, so the backend should refuse it"
+    },
+    {
+      "id": "create_directory",
+      "tool": "create_directory",
+      "arguments": {
+        "path": "{root}/work/receipts"
+      },
+      "probes": [
+        ["list_directory", {"path": "{root}/work"}]
+      ],
+      "note": "documented as 'create or ensure exists', which is a claim of idempotence made in prose and nowhere in the annotations"
+    }
+  ]
+}

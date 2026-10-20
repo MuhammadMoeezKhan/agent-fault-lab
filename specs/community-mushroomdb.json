@@ -1,0 +1,67 @@
+{
+  "server": {
+    "name": "community-mushroomdb",
+    "command": [
+      "npx",
+      "-y",
+      "mushroomdb",
+      "mcp",
+      "{root}/db"
+    ],
+    "version": "mushroomdb 0.9.x (npx latest at run time)",
+    "note": "An embedded graph database. Its registry entry is one of the few that declares the arguments needed to start it (mcp plus a required database directory), so the store is inside the trial root by construction. Twenty three tools, none of them annotated.",
+    "env": {
+      "HOME": "{root}/home",
+      "npm_config_cache": "{home}/.npm",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "db",
+      "ignore": [
+        "commit_times.bin",
+        ".DS_Store"
+      ],
+      "name": "graph-store"
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "db"
+      ]
+    },
+    "timeout_s": 120.0,
+    "quiesce_s": 1.5
+  },
+  "fixtures": [
+    {
+      "id": "remember_note",
+      "tool": "remember",
+      "arguments": {
+        "text": "Charge of 100 recorded for invoice INV-1"
+      },
+      "probes": [
+        [
+          "stats",
+          {}
+        ]
+      ],
+      "note": "a free text append into the graph, with no key in the arguments"
+    },
+    {
+      "id": "upsert_entity",
+      "tool": "upsert_entity",
+      "arguments": {
+        "name": "INV-1",
+        "kind": "invoice"
+      },
+      "probes": [
+        [
+          "stats",
+          {}
+        ]
+      ],
+      "note": "an upsert by name: the same tool family, with a key, for the H1b comparison"
+    }
+  ]
+}

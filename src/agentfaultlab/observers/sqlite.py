@@ -23,6 +23,15 @@ class SqliteObserver:
     identical outcomes read as different states, so the schema is compared as
     a column list instead.
 
+    `ignore_columns` drops columns that carry no effect but change every run:
+    a row id, a created_at, a session id. Without it, a server that stamps
+    every row with a timestamp makes S1 and S2 differ from every faulted end
+    state, so every verdict would read DIVERGED and nothing would be learned.
+    Dropping an autoincrement id is safe for the question being asked, because
+    rows are compared as a list: a duplicated INSERT still shows up as the
+    same row twice. Whatever is dropped is recorded in the snapshot, so a
+    result can never quietly depend on an observer that was looking away.
+
     The file is opened read only, through a URI, so snapshotting cannot
     itself create the database or take a write lock on a server that is still
     running. A missing file snapshots as absent rather than raising, because
@@ -36,13 +45,23 @@ class SqliteObserver:
         name: str = "sqlite",
         include_schema: bool = True,
         tables: Optional[Iterable[str]] = None,
+        ignore_columns: Optional[Iterable[str]] = None,
         max_rows: int = 20000,
     ) -> None:
         self.path = os.path.abspath(path)
         self.name = name
         self.include_schema = include_schema
         self.tables = tuple(tables) if tables else None
+        self.ignore_columns = tuple(
+            entry.lower() for entry in (ignore_columns or ())
+        )
         self.max_rows = max_rows
+
+    def _ignored(self, table: str, column: str) -> bool:
+        """True for a column named either bare or as `table.column`."""
+        lowered = column.lower()
+        qualified = f"{table.lower()}.{lowered}"
+        return lowered in self.ignore_columns or qualified in self.ignore_columns
 
     def snapshot(self) -> Snapshot:
         if not os.path.exists(self.path):
@@ -69,8 +88,19 @@ class SqliteObserver:
             if self.tables is not None and table not in self.tables:
                 continue
             entry: dict[str, Any] = {}
+            columns = self._columns(connection, table)
+            kept = [
+                index
+                for index, column in enumerate(columns)
+                if not self._ignored(table, column[0])
+            ]
+            dropped = [
+                column[0] for column in columns if self._ignored(table, column[0])
+            ]
+            if dropped:
+                entry["ignored_columns"] = dropped
             if self.include_schema:
-                entry["columns"] = self._columns(connection, table)
+                entry["columns"] = [columns[index] for index in kept]
             quoted = table.replace('"', '""')
             fetched = connection.execute(
                 f'select * from "{quoted}" limit {self.max_rows + 1}'
@@ -80,7 +110,7 @@ class SqliteObserver:
                 entry["count"] = len(fetched)
             else:
                 entry["rows"] = sorted(
-                    [list(row) for row in fetched],
+                    [[row[index] for index in kept] for row in fetched],
                     key=lambda row: [(value is None, str(value)) for value in row],
                 )
             state[table] = entry

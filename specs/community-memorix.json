@@ -1,0 +1,108 @@
+{
+  "server": {
+    "name": "community-memorix",
+    "command": [
+      "npx",
+      "-y",
+      "memorix",
+      "serve"
+    ],
+    "version": "memorix 1.9.x (npx latest at run time)",
+    "note": "Launched the way its registry entry says to (packageArguments: serve). It keeps its store in ~/.memorix, so HOME moves into the trial root and only the npm download cache points back at the real home.",
+    "env": {
+      "HOME": "{root}/home",
+      "npm_config_cache": "{home}/.npm",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "sqlite",
+      "path": "home/.memorix/data/memorix.db",
+      "tables": [
+        "observations"
+      ],
+      "ignore_columns": [
+        "id",
+        "createdAt",
+        "updatedAt",
+        "projectId",
+        "sessionId",
+        "writeGeneration",
+        "createdByAgentId",
+        "sharedWithAgentIds",
+        "revisionCount"
+      ],
+      "name": "memorix-store",
+      "note": "revisionCount is ignored deliberately. With topicKey set the server does what its schema promises (the existing observation is updated, not duplicated), and the only difference between one application and two is that this counter reads 2. Observing it made the fixture score DUPLICATED, which would have been a false finding: the stored payload is identical. Ignoring it makes one application indistinguishable from two, which is the honest verdict, and the fixture is then kept out of the duplicate denominator rather than counted as safe."
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "project/README.md": "audit fixture repository\n"
+      },
+      "git": {
+        "path": "project",
+        "message": "seed"
+      }
+    },
+    "prelude": [
+      [
+        "memorix_session_start",
+        {
+          "projectRoot": "{root}/project"
+        }
+      ]
+    ],
+    "timeout_s": 120.0
+  },
+  "fixtures": [
+    {
+      "id": "store_observation",
+      "tool": "memorix_store",
+      "arguments": {
+        "entityName": "charges",
+        "type": "what-changed",
+        "title": "charge recorded for INV-1",
+        "narrative": "Recorded a charge of 100 for invoice INV-1.",
+        "facts": [
+          "amount: 100",
+          "invoice: INV-1"
+        ]
+      },
+      "probes": [
+        [
+          "memorix_search",
+          {
+            "query": "INV-1"
+          }
+        ]
+      ],
+      "note": "an append to a memory store, with no key in the arguments: the duplicate-prone shape"
+    },
+    {
+      "id": "store_observation_with_topic_key",
+      "tool": "memorix_store",
+      "arguments": {
+        "entityName": "charges",
+        "type": "what-changed",
+        "title": "charge recorded for INV-2",
+        "narrative": "Recorded a charge of 250 for invoice INV-2.",
+        "facts": [
+          "amount: 250",
+          "invoice: INV-2"
+        ],
+        "topicKey": "charge-INV-2"
+      },
+      "probes": [
+        [
+          "memorix_search",
+          {
+            "query": "INV-2"
+          }
+        ]
+      ],
+      "note": "the same append with topicKey set, which the server's own tip says prevents duplicates: a server-offered dedup key, tested behaviourally. The upsert holds: a repeat updates the one row and only bumps revisionCount, which the observer ignores"
+    }
+  ]
+}
