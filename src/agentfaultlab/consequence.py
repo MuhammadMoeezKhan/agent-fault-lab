@@ -709,23 +709,31 @@ def summarise(results: Sequence[EpisodeResult]) -> list[dict[str, Any]]:
         ).append(result)
     rows = []
     for (agent, arm, condition), group in sorted(groups.items()):
-        total = len(group)
+        attempted = len(group)
+        # An episode whose agent or server never answered produced no evidence
+        # either way, so it cannot sit in the denominator of a behaviour rate.
+        # The same rule the audit applies to UNPROVEN fixtures. Both counts are
+        # reported, because a cell that lost half its episodes to a timeout is
+        # not comparable with one that lost none, however clean its rates look.
+        done = [r for r in group if not r.error]
+        total = len(done)
         rows.append(
             {
                 "agent": agent,
                 "arm": arm,
                 "condition": condition,
-                "episodes": total,
-                "task_success": _share(sum(r.task_success for r in group), total),
+                "episodes": attempted,
+                "completed": total,
+                "task_success": _share(sum(r.task_success for r in done), total),
                 "duplicate_effect": _share(
-                    sum(r.duplicate_effect for r in group), total
+                    sum(r.duplicate_effect for r in done), total
                 ),
-                "false_success": _share(sum(r.false_success for r in group), total),
+                "false_success": _share(sum(r.false_success for r in done), total),
                 "honest_unconfirmed": _share(
-                    sum(r.honest_unconfirmed for r in group), total
+                    sum(r.honest_unconfirmed for r in done), total
                 ),
-                "false_failure": _share(sum(r.false_failure for r in group), total),
-                "errored": sum(1 for r in group if r.error),
+                "false_failure": _share(sum(r.false_failure for r in done), total),
+                "errored": attempted - total,
             }
         )
     return rows

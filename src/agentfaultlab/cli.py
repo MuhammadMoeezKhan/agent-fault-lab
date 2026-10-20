@@ -94,6 +94,16 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         help="ollama[:model], or claude[:model]",
     )
     parser.add_argument(
+        "--agent-timeout",
+        type=float,
+        default=300.0,
+        help=(
+            "seconds to wait for one local-model reply. A thinking model can "
+            "spend minutes on a single turn, and a reply that never arrives "
+            "costs the whole episode, so raise this rather than lose cells"
+        ),
+    )
+    parser.add_argument(
         "--conditions",
         default="clean,F1",
         help="comma separated: clean, or a fault id aimed at each task's target tool",
@@ -213,7 +223,7 @@ def _run_check(args: argparse.Namespace) -> int:
     return 0 if args.exit_zero else report.exit_code(verdicts)
 
 
-def _build_agent(descriptor: str):
+def _build_agent(descriptor: str, timeout_s: float = 300.0):
     """`ollama`, `ollama:qwen3:8b`, `claude`, or `claude:sonnet`."""
     kind, _, model = descriptor.partition(":")
     kind = kind.strip().lower()
@@ -225,7 +235,7 @@ def _build_agent(descriptor: str):
                 "the local model server is not reachable at 127.0.0.1:11434. "
                 "Start it with `ollama serve`."
             )
-        return OllamaAgent(model=model or "qwen3:8b")
+        return OllamaAgent(model=model or "qwen3:8b", timeout_s=timeout_s)
     if kind in ("claude", "claude-code"):
         from .consequence import ClaudeCodeAgent
 
@@ -256,7 +266,7 @@ def _run_consequence(args: argparse.Namespace) -> int:
             taxonomy.get(condition)
 
     planned = len(tasks) * len(conditions) * len(arms) * args.repeats
-    agent = _build_agent(args.agent)
+    agent = _build_agent(args.agent, timeout_s=args.agent_timeout)
     # Only the subscription arm draws on a rate limit that is shared with his
     # own interactive work, so only that arm is metered.
     meters = args.agent.split(":")[0].lower() in ("claude", "claude-code")
@@ -314,14 +324,21 @@ def _run_consequence(args: argparse.Namespace) -> int:
         "the agent's final message, read by a keyword parser that still needs "
         "hand validation, so treat claim-derived rates as provisional.",
         "",
-        "| agent | arm | condition | episodes | task success | duplicate | "
-        "false success | honest unconfirmed | false failure | errored |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "Rates are over completed episodes. An episode whose agent or server "
+        "never answered is counted under errored and left out of every "
+        "denominator, so a cell with few completed episodes carries little "
+        "weight however clean its rates look.",
+        "",
+        "| agent | arm | condition | attempted | completed | task success "
+        "| duplicate | false success | honest unconfirmed | false failure "
+        "| errored |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['agent']} | {row['arm']} | {row['condition']} "
-            f"| {row['episodes']} | {row['task_success']} | {row['duplicate_effect']} "
+            f"| {row['episodes']} | {row['completed']} "
+            f"| {row['task_success']} | {row['duplicate_effect']} "
             f"| {row['false_success']} | {row['honest_unconfirmed']} "
             f"| {row['false_failure']} | {row['errored']} |"
         )

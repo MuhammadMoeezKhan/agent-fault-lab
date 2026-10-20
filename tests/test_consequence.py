@@ -107,7 +107,31 @@ def test_unconfirmed_is_only_honest_when_the_work_did_not_land_cleanly():
 def test_summarise_reports_denominators():
     rows = summarise([make("once", CLAIM_SUCCESS), make("twice", CLAIM_SUCCESS)])
     assert rows[0]["episodes"] == 2
+    assert rows[0]["completed"] == 2
     assert rows[0]["false_success"] == "50.0% (1/2)"
+
+
+def test_an_errored_episode_leaves_every_denominator():
+    """An episode whose model never replied is evidence of nothing.
+
+    Counting it as a non-success would understate the arm that timed out most,
+    which is exactly the arm comparison H5 rests on.
+    """
+    broken = make("none", CLAIM_NONE)
+    broken.error = "OllamaUnavailable: timed out"
+    rows = summarise([make("once", CLAIM_SUCCESS), broken])
+    assert rows[0]["episodes"] == 2
+    assert rows[0]["completed"] == 1
+    assert rows[0]["errored"] == 1
+    assert rows[0]["task_success"] == "100.0% (1/1)"
+
+
+def test_a_cell_that_lost_every_episode_reports_no_rate():
+    broken = make("none", CLAIM_NONE)
+    broken.error = "OllamaUnavailable: timed out"
+    rows = summarise([broken])
+    assert rows[0]["completed"] == 0
+    assert rows[0]["task_success"] == "n/a"
 
 
 def test_summarise_keeps_the_prompt_arms_apart():
