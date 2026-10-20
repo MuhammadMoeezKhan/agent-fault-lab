@@ -1,0 +1,122 @@
+{
+  "server": {
+    "name": "community-contentrain",
+    "command": [
+      "npx",
+      "-y",
+      "@contentrain/mcp"
+    ],
+    "version": "@contentrain/mcp 1.x (npx latest at run time)",
+    "note": "The best annotated server in the sample: all 22 tools declare readOnlyHint and all 15 mutating ones declare idempotentHint, so the annotations are claims that can be tested rather than gaps. Every write is auto-committed to git, which also makes the effect observable canonically (commit subjects and trees, no hashes). The fixture repository is the trial root itself, because this server works on its working directory: pointing it at a subdirectory while the process ran elsewhere made it initialise itself in whatever directory the harness was started from.",
+    "env": {
+      "HOME": "{root}/home",
+      "npm_config_cache": "{home}/.npm",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "git",
+      "path": "",
+      "ignore": [
+        ".contentrain/context.json",
+        ".contentrain/.cache/*",
+        ".contentrain/meta/*"
+      ],
+      "ignore_empty_commits": true,
+      "note": "context.json and the meta files are ignored: both carry a wall clock timestamp (meta records updated_at) and nothing else that differs between one application and two. The content file itself is keyed by entry id, so a repeat overwrites it, which is why this fixture is repeat-indistinguishable rather than safe by deduplication."
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "README.md": "audit fixture project\n",
+        "package.json": "{\n  \"name\": \"audit-fixture\",\n  \"private\": true,\n  \"version\": \"0.0.0\"\n}\n"
+      },
+      "git": {
+        "path": "",
+        "message": "seed"
+      }
+    },
+    "prelude": [
+      [
+        "contentrain_init",
+        {
+          "stack": "other",
+          "locales": [
+            "en"
+          ],
+          "domains": [
+            "billing"
+          ]
+        }
+      ],
+      [
+        "contentrain_model_save",
+        {
+          "id": "charges",
+          "name": "Charges",
+          "kind": "collection",
+          "domain": "billing",
+          "i18n": false,
+          "title_field": "invoice",
+          "description": "Recorded charges",
+          "fields": {
+            "invoice": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    ],
+    "quiesce_s": 0.5,
+    "timeout_s": 180.0
+  },
+  "fixtures": [
+    {
+      "id": "save_content_entry",
+      "tool": "contentrain_content_save",
+      "arguments": {
+        "model": "charges",
+        "entries": [
+          {
+            "id": "inv-1",
+            "data": {
+              "invoice": "INV-1",
+              "amount": 100
+            }
+          }
+        ]
+      },
+      "probes": [
+        [
+          "contentrain_content_list",
+          {
+            "model": "charges"
+          }
+        ]
+      ],
+      "note": "declared idempotentHint:true, takes a list of entries, and auto-commits: F5 applies as well as the repeat modes"
+    },
+    {
+      "id": "save_vocabulary_term",
+      "tool": "contentrain_vocabulary_save",
+      "arguments": {
+        "terms": {
+          "invoice": {
+            "en": "Invoice"
+          }
+        }
+      },
+      "probes": [
+        [
+          "contentrain_status",
+          {}
+        ]
+      ],
+      "note": "also declared idempotentHint:true, on a keyed map rather than a list"
+    }
+  ]
+}

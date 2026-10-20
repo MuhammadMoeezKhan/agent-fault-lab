@@ -81,8 +81,12 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             ignore_columns=tuple(config.get("ignore_columns") or ()),
         )
     if kind == "git":
+        ignore = config.get("ignore")
         return lambda root: GitObserver(
-            os.path.join(root, config.get("path", "")), name=config.get("name", "git")
+            os.path.join(root, config.get("path", "")),
+            name=config.get("name", "git"),
+            ignore=tuple(ignore) if ignore else None,
+            ignore_empty_commits=bool(config.get("ignore_empty_commits", False)),
         )
     if kind == "composite":
         parts = [_observer_factory(part) for part in config.get("parts", [])]
@@ -164,6 +168,29 @@ def _setup_factory(config: Optional[dict[str, Any]]) -> Optional[Callable[[str],
     return setup
 
 
+def _cwd_is_root(server: dict[str, Any]) -> bool:
+    """Guard the one setting that can let a server out of the trial root.
+
+    With `cwd_is_root: false` the server inherits the directory the harness
+    was started from. A server that writes relative to its working directory
+    then writes there: @contentrain/mcp, pointed at a subdirectory while the
+    process ran in the engine repository, initialised itself in that
+    repository and auto-committed four commits onto its main branch. Opting
+    out now has to be explicit about it.
+    """
+    if server.get("cwd_is_root", True):
+        return True
+    if server.get("allow_process_cwd"):
+        return False
+    raise SpecError(
+        "cwd_is_root: false lets the server write into the directory the "
+        "harness was started from, outside the trial root. If that is really "
+        "wanted, set allow_process_cwd: true as well; otherwise put the "
+        "fixture repository at the trial root (setup.git.path: \"\") and "
+        "leave cwd_is_root alone."
+    )
+
+
 def _prelude(raw: Any) -> tuple[tuple[str, dict[str, Any]], ...]:
     """Parse `prelude`: calls every trial makes before the fixture.
 
@@ -217,7 +244,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
         setup=_setup_factory(server.get("setup")),
         env={**GIT_ENV, **(server.get("env") or {})},
         prelude=_prelude(server.get("prelude")),
-        cwd_is_root=bool(server.get("cwd_is_root", True)),
+        cwd_is_root=_cwd_is_root(server),
         version=str(server.get("version", "")),
         timeout_s=float(server.get("timeout_s", 20.0)),
         quiesce_s=float(server.get("quiesce_s", 0.0)),

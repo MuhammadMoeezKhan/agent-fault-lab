@@ -16,11 +16,17 @@ Two things it measures, both of which belong in the paper:
    at all. A server that declares nothing gives a client nothing to decide a
    retry with, which is the gap the fault study is about.
 
-Each server runs with its working directory inside a throwaway tree. `HOME` is
-NOT replaced: npx and uvx keep their caches there, and a throwaway HOME makes
-every launch a cold install (which is how the first run took three minutes per
-server and still timed out). State directories are redirected per server where
-the server declares an environment variable for them.
+Each server runs inside a throwaway tree, with `HOME` moved into it and only
+`npm_config_cache` pointing back at the real download cache, so a launch stays
+fast without the server being able to write into the real home.
+
+That isolation was added after a probe did damage. An earlier version left
+`HOME` alone, on the argument that npx needs its cache there. Starting
+codex-supervisor-mcp and asking it for nothing but `tools/list` then installed
+a skill file into `~/.claude/skills/`, in the real home directory, with no tool
+call made and nothing asked. A server that edits the host agent's own
+configuration when it starts is a finding in its own right, and it is also the
+reason nothing here runs with the real HOME any more.
 """
 from __future__ import annotations
 
@@ -79,6 +85,10 @@ def probe_once(
     command: list[str], root: str, env_extra: dict[str, str], timeout_s: float
 ) -> dict[str, Any]:
     env = dict(os.environ)
+    home = os.path.join(root, "home")
+    os.makedirs(home, exist_ok=True)
+    env["HOME"] = home
+    env.setdefault("npm_config_cache", os.path.expanduser("~/.npm"))
     env.update({key: value.replace("{root}", root) for key, value in env_extra.items()})
     env["NO_COLOR"] = "1"
     session = ServerSession(command, cwd=root, env=env, timeout_s=timeout_s)

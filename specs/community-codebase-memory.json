@@ -1,0 +1,48 @@
+{
+  "server": {
+    "name": "community-codebase-memory",
+    "command": ["npx", "-y", "codebase-memory-mcp"],
+    "version": "codebase-memory-mcp 0.12.x (npx latest at run time)",
+    "note": "One of only two servers in the sample that annotate their mutating tools at all. index_repository declares idempotentHint:true and ingest_traces declares idempotentHint:false with destructiveHint:true, so both claims can be tested rather than assumed. The index lives in memory unless persistence is asked for, which is why the fixtures set it.",
+    "env": {
+      "HOME": "{root}/home",
+      "npm_config_cache": "{home}/.npm",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "repo/.codebase-memory",
+      "name": "index-store"
+    },
+    "setup": {
+      "directories": ["home"],
+      "files": {
+        "repo/README.md": "audit fixture repository\n",
+        "repo/src/billing.js": "export function chargeInvoice(id, amount) {\n  return recordCharge(id, amount);\n}\n\nexport function recordCharge(id, amount) {\n  return { id, amount };\n}\n",
+        "repo/src/index.js": "import { chargeInvoice } from './billing.js';\n\nexport function main() {\n  return chargeInvoice('INV-1', 100);\n}\n"
+      },
+      "git": {
+        "path": "repo",
+        "message": "seed"
+      }
+    },
+    "quiesce_s": 1.0,
+    "timeout_s": 180.0
+  },
+  "fixtures": [
+    {
+      "id": "index_repository_persisted",
+      "tool": "index_repository",
+      "arguments": {
+        "repo_path": "{root}/repo",
+        "mode": "fast",
+        "name": "fixture",
+        "persistence": true
+      },
+      "probes": [
+        ["list_projects", {}]
+      ],
+      "note": "declared idempotentHint:true, and the declaration is what is under test"
+    }
+  ]
+}
