@@ -246,6 +246,44 @@ def _declared_secrets(package: dict[str, Any]) -> list[str]:
     return names
 
 
+def _launch_arguments(package: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """The arguments the registry says to start this package with.
+
+    An earlier version ignored these, so servers were launched as a bare
+    `npx <package>`. Three of the first candidates then hung at `initialize`
+    with nothing on stderr, because their entry point needs a subcommand
+    (`mushroomdb mcp <dir>`, `memorix serve`). Launching a server the way its
+    own registry entry says to is part of what the audit measures: a server
+    that cannot be started from its metadata is a finding, not a bad pick.
+
+    Returns the literal argument values, and separately the placeholders that
+    need a value from the caller (a database directory, for example), because
+    a fixture has to supply those before the server can run.
+    """
+    argv: list[str] = []
+    needs_input: list[str] = []
+    for key in ("runtimeArguments", "packageArguments"):
+        for argument in package.get(key) or []:
+            if not isinstance(argument, dict):
+                continue
+            value = argument.get("value")
+            name = argument.get("name") or argument.get("valueHint") or ""
+            if isinstance(value, str) and value:
+                if argument.get("type") == "named" and name:
+                    argv += [name, value]
+                else:
+                    argv.append(value)
+                continue
+            if not argument.get("isRequired"):
+                # An optional argument with no declared value is left out
+                # rather than passed as a placeholder string.
+                continue
+            hint = name or argument.get("placeholder") or argument.get("format") or "?"
+            needs_input.append(str(hint))
+            argv.append("{" + str(hint) + "}")
+    return argv, needs_input
+
+
 def classify(entry: dict[str, Any]) -> dict[str, Any]:
     """Flatten one registry entry into a frame row with a runnability reason."""
     server = entry.get("server") or {}
@@ -274,6 +312,9 @@ def classify(entry: dict[str, Any]) -> dict[str, Any]:
         "secrets": [],
         "runnable": False,
         "reason": "",
+        "runtime_hint": "",
+        "launch_argv": [],
+        "launch_needs_input": [],
     }
 
     if row["status"] and row["status"] != "active":
@@ -293,6 +334,7 @@ def classify(entry: dict[str, Any]) -> dict[str, Any]:
             row["reason"] = f"{registry_type} package uses {transport}, not stdio"
             continue
         secrets = _declared_secrets(package)
+        argv, needs_input = _launch_arguments(package)
         row.update(
             {
                 "runner": runner,
@@ -300,6 +342,9 @@ def classify(entry: dict[str, Any]) -> dict[str, Any]:
                 "package_version": package.get("version", ""),
                 "transport": transport or "stdio",
                 "secrets": secrets,
+                "runtime_hint": package.get("runtimeHint", "") or "",
+                "launch_argv": argv,
+                "launch_needs_input": needs_input,
             }
         )
         if secrets:
@@ -362,6 +407,75 @@ def add_npm_downloads(
     }
 
 
+def load_download_cache(path: str) -> dict[tuple[str, str], int]:
+    """Download counts from a previous `frame-all.jsonl`.
+
+    Fetching every npm package takes hours, and the counts move day to day, so
+    refetching them to change something about the frames would silently change
+    the popularity ranking too. Rebuilding from a cache keeps a frame change
+    and a data change separate, which is what makes the frames reproducible.
+    """
+    cache: dict[tuple[str, str], int] = {}
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if record.get("__snapshot__") or record.get("__trailer__"):
+                continue
+            count = record.get("weekly_downloads")
+            if count is None:
+                continue
+            cache[(record.get("runner", ""), record.get("package", ""))] = count
+    return cache
+
+
+def apply_download_cache(
+    rows: list[dict[str, Any]], cache: dict[tuple[str, str], int], source: str
+) -> dict[str, Any]:
+    """Fill in cached counts. Nothing is fetched, so no row is invented."""
+    candidates = [row for row in rows if row["runner"] == "npx" and row["package"]]
+    hits = 0
+    for row in candidates:
+        count = cache.get((row["runner"], row["package"]))
+        if count is not None:
+            row["weekly_downloads"] = count
+            hits += 1
+    return {
+        "queried": 0,
+        "population": len(candidates),
+        "answered": hits,
+        "sampled": False,
+        "cached": hits,
+        "cache_source": source,
+    }
+
+
+def collapse_aliases(
+    rows: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], int]:
+    """One row per package, with the other registry names recorded.
+
+    The registry lists the same package under several server names
+    (`io.github.callstack/agent-device` and
+    `io.github.callstackincubator/agent-device` are one npm package). Ranking
+    listings instead of packages would put one server in a "top 20" twice and,
+    if drawn, would audit the same binary twice and count it as two independent
+    observations. Frame 2 is a frame of packages.
+    """
+    by_package: dict[tuple[str, str], dict[str, Any]] = {}
+    collapsed = 0
+    for row in sorted(rows, key=lambda row: row["name"]):
+        key = (row["runner"], row["package"])
+        kept = by_package.get(key)
+        if kept is None:
+            by_package[key] = dict(row, registry_aliases=row["name"])
+            continue
+        kept["registry_aliases"] += f"; {row['name']}"
+        collapsed += 1
+    return list(by_package.values()), collapsed
+
+
 # ------------------------------------------------------------------- frames
 
 def build_frames(
@@ -372,6 +486,7 @@ def build_frames(
     draw: int,
     downloads: int,
     allow_truncated: bool = False,
+    downloads_from: str | None = None,
 ) -> None:
     entries = []
     header: dict[str, Any] = {}
@@ -408,7 +523,12 @@ def build_frames(
     latest = latest_only(entries)
     rows = [classify(entry) for entry in latest]
     rows.sort(key=lambda row: row["name"])
-    download_stats = add_npm_downloads(rows, downloads, seed)
+    if downloads_from:
+        download_stats = apply_download_cache(
+            rows, load_download_cache(downloads_from), downloads_from
+        )
+    else:
+        download_stats = add_npm_downloads(rows, downloads, seed)
 
     # Frame 1 is not derived from the registry; see REFERENCE_PACKAGES.
     reference_rows = [
@@ -433,11 +553,9 @@ def build_frames(
 
     runnable = [row for row in rows if row["runnable"]]
     reference = reference_rows
-    popular = sorted(
-        (row for row in runnable if row.get("weekly_downloads")),
-        key=lambda row: row["weekly_downloads"],
-        reverse=True,
-    )
+    with_downloads = [row for row in runnable if row.get("weekly_downloads")]
+    popular, alias_count = collapse_aliases(with_downloads)
+    popular.sort(key=lambda row: row["weekly_downloads"], reverse=True)
 
     # Frame 3: a seeded draw from the runnable population. Seeded on the
     # snapshot's own fetch time plus the given seed, so re-running against a
@@ -478,7 +596,12 @@ def build_frames(
         f"{download_stats.get('population', 0)} npm packages"
         + (" (RANDOM SUBSAMPLE, so Frame 2 is a sample of the popular tail, "
            "not the true top)" if download_stats.get("sampled") else ""),
-        f"- runnable with a weekly npm download count: {len(popular)}",
+        f"- npm download counts source: "
+        + (f"cached from {os.path.basename(download_stats['cache_source'])}"
+           if download_stats.get("cache_source") else "fetched live"),
+        f"- runnable packages with a weekly npm download count: {len(popular)}",
+        f"- registry listings collapsed into another listing of the same "
+        f"package: {alias_count}",
         "",
         "**The registry does not list the official reference servers.** A "
         "complete snapshot contains no server whose name mentions "
@@ -521,13 +644,18 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
 
     columns = [
         "name", "package", "runner", "package_version", "weekly_downloads",
-        "is_reference", "repository", "reason", "description",
+        "is_reference", "registry_aliases", "runtime_hint", "launch_argv",
+        "launch_needs_input", "repository", "reason", "description",
     ]
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            flat = dict(row)
+            for key in ("launch_argv", "launch_needs_input"):
+                if isinstance(flat.get(key), list):
+                    flat[key] = " ".join(str(item) for item in flat[key])
+            writer.writerow(flat)
 
 
 def main() -> int:
@@ -564,6 +692,14 @@ def main() -> int:
         ),
     )
 
+    frames.add_argument(
+        "--downloads-from",
+        help=(
+            "reuse the npm download counts in a previous frame-all.jsonl "
+            "instead of fetching them, so the frames can be rebuilt offline"
+        ),
+    )
+
     args = parser.parse_args()
     if args.command == "snapshot":
         snapshot(
@@ -580,6 +716,7 @@ def main() -> int:
         draw=args.draw,
         downloads=args.downloads,
         allow_truncated=args.allow_truncated,
+        downloads_from=args.downloads_from,
     )
     return 0
 
