@@ -99,7 +99,11 @@ For one tool and one fault, three trials run on three freshly built backends:
 | `clean_twice` | the call twice, no fault | S2, the shape of two |
 | `faulted` | the fault, then a retry if the caller was left without an answer | Sf |
 
-The verdict follows from which baseline Sf matches: S1 is `SAFE`, S2 is `DUPLICATED`, the untouched state is `LOST`, and anything else is `DIVERGED`. Nothing in that chain reads the tool's response or an agent's summary, so a tool that misreports what it did is caught by construction.
+The verdict follows from which baseline Sf matches: S1 is `SAFE`, S2 is `DUPLICATED`, the untouched state is `LOST`, and anything else is `DIVERGED`. Under F5 a state between the two is `PARTIAL`, because a prefix of a list argument landing and then the retry applying the whole list is what that fault is built to cause, not an unexplained state. Nothing in that chain reads the tool's response or an agent's summary, so a tool that misreports what it did is caught by construction.
+
+A fourth trial runs one clean application a second time, on another fresh backend. If the two do not match, the observer is not canonical for this server, there is no stable baseline to compare against, and the fixture is `UNPROVEN`: no fault trials run and it appears in no numerator and no denominator. Two servers in the first real sample are `UNPROVEN` for this reason, one keeping its state in an append-only log and one in a compressed index, and before this check they produced `DIVERGED` rows that read like findings.
+
+An observer may be told to ignore named columns, named paths, or commits whose tree matches their parent's, for fields that move when the effect does not: a row id, an `updated_at`, a context file rewritten after every call. Every exclusion is declared in the spec, recorded inside the snapshot and printed with the result, because a verdict is only as honest as the projection it compares. The rule for adding one is that the field has to be shown to carry no effect.
 
 Two honest limits are reported rather than hidden. When S1 equals S2, no end state could distinguish one application from two (an overwrite, or real deduplication), so the tool is repeat safe for those arguments but is kept out of the duplicate-rate denominator. And every trial runs three times by default, because a tool that is sometimes safe is not safe, and because a snapshot that moves on its own means the observer is not canonical yet and the row must not be trusted.
 
@@ -116,6 +120,21 @@ Injected at the transport, so they work with any client and any server. Ids are 
 | F5 | partial batch | a timeout, after part of a list argument committed |
 | F6 | silent OK | success, for a call that never ran |
 | F7 | error before commit | an error. The control: a retry here must be safe |
+
+### Finding out what a server does before writing a spec
+
+Two scripts exist so a spec is written from what a server does rather than from its README. Neither calls a mutating tool without being told to, and both run the server inside a throwaway tree with `HOME` moved into it.
+
+```bash
+# start a server the way its own registry entry says to, and read tools/list
+python scripts/probe_server.py frame-all.jsonl io.github.example/server
+
+# call one tool once, then print what changed on disk
+python scripts/discover_state.py --runner npx --package example-mcp \
+  --tool write_note --arguments '{"path": "{work}/note.txt", "text": "x"}'
+```
+
+`probe_server.py` reports two things worth reporting on their own: whether the command the registry describes actually speaks MCP, and how many of a server's mutating tools declare `idempotentHint` at all.
 
 ### Observers
 
@@ -153,6 +172,8 @@ A spec is one JSON file per server, so it is also the unit of contribution: send
   ]
 }
 ```
+
+`prelude` calls, if the spec has them, run before every trial and before the first snapshot, for servers that refuse to work until a session is bound to a project. A failed prelude aborts the trial rather than letting a refused fixture read as a lost effect.
 
 `probes` are read-only calls used to decide something separate from duplication: whether a caller who never got an answer could have found out what happened. If no probe's output differs between the untouched backend and the backend after one application, the tool is unconfirmable through that server, and the agent on the other end has nothing to check against.
 
