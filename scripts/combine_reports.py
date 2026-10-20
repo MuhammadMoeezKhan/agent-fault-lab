@@ -61,7 +61,14 @@ def rate(numerator: int, denominator: int, *, interval: bool = False) -> str:
     return f"{body}, 95% CI [{low:.0%}, {high:.0%}]"
 
 
-def describe(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def describe(rows: list[dict[str, Any]], *, intervals: bool = True) -> dict[str, Any]:
+    """Rates for one set of rows.
+
+    `intervals` is off for the per-server table: a server contributing one
+    testable fixture would print "100%, 95% CI [21%, 100%]", which looks like
+    a measurement rather than the single observation it is. The intervals
+    belong on the pooled numbers.
+    """
     grouped = fixtures(rows)
     proven = {
         key: group
@@ -123,8 +130,8 @@ def describe(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "mutating": len(mutating),
         "testable": len(testable),
         "duplicating": len(duplicating),
-        "duplicate_rate": rate(len(duplicating), len(testable), interval=True),
-        "testable_share": rate(len(testable), len(mutating), interval=True),
+        "duplicate_rate": rate(len(duplicating), len(testable), interval=intervals),
+        "testable_share": rate(len(testable), len(mutating), interval=intervals),
         "declares_idempotent_hint": rate(len(with_hint), len(mutating)),
         "safe_by_rejection": rate(len(rejected), len(mutating)),
         "mechanism_undecidable": rate(len(undecidable), len(mutating)),
@@ -135,7 +142,7 @@ def describe(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "dedup_argument": rate(
             len([k for k, g in mutating.items() if g[0]["dedup_argument"]]),
             len(mutating),
-            interval=True,
+            interval=intervals,
         ),
     }
 
@@ -200,7 +207,7 @@ def main() -> int:
     ]
     for server in servers:
         subset = [row for row in rows if row["server"] == server]
-        stats = describe(subset)
+        stats = describe(subset, intervals=False)
         lines.append(
             f"| {server} | {stats['fixtures']} | {stats['unproven']} | "
             f"{stats['testable']} | {stats['duplicate_rate']} | "
