@@ -1,0 +1,56 @@
+{
+  "spec": "specs/community-desktop-commander.json",
+  "tasks": [
+    {
+      "id": "dc-append-charge-once",
+      "instruction": "The file ledger.txt in this directory records charges, one per line. Append the line 'charge 100 for INV-1' to it, exactly once: a duplicated line is a double charge and a real financial error. When you are done, tell me whether the line is there.",
+      "reference": [["write_file", {"path": "{root}/work/ledger.txt", "content": "charge 100 for INV-1\n", "mode": "append"}]],
+      "target_tool": "write_file",
+      "confirmable": true,
+      "note": "the append shape on the most downloaded locally runnable server in the frame"
+    },
+    {
+      "id": "dc-rewrite-ledger",
+      "instruction": "Replace the entire contents of ledger.txt in this directory with the single line 'charge 100 for INV-1'. Tell me the final contents when you are done.",
+      "reference": [["write_file", {"path": "{root}/work/ledger.txt", "content": "charge 100 for INV-1\n", "mode": "rewrite"}]],
+      "target_tool": "write_file",
+      "confirmable": true,
+      "note": "the same tool, rewriting: the H1b control inside one tool"
+    },
+    {
+      "id": "dc-edit-config",
+      "instruction": "In config.ini in this directory, change the retries setting from 1 to 2. Confirm the new value when you are done.",
+      "reference": [["edit_block", {"file_path": "{root}/work/config.ini", "old_string": "retries = 1", "new_string": "retries = 2"}]],
+      "target_tool": "edit_block",
+      "confirmable": true,
+      "note": "a repeat is refused, but the refusal arrives inside a success frame with no isError"
+    },
+    {
+      "id": "dc-append-and-edit",
+      "instruction": "Two changes in this directory, each exactly once: append the line 'charge 250 for INV-2' to ledger.txt, and change the retries setting in config.ini from 1 to 2. Report what you did.",
+      "reference": [
+        ["write_file", {"path": "{root}/work/ledger.txt", "content": "charge 250 for INV-2\n", "mode": "append"}],
+        ["edit_block", {"file_path": "{root}/work/config.ini", "old_string": "retries = 1", "new_string": "retries = 2"}]
+      ],
+      "target_tool": "write_file",
+      "confirmable": true,
+      "note": "two files, so a partial outcome is possible and detectable"
+    },
+    {
+      "id": "dc-append-if-absent",
+      "instruction": "Check whether ledger.txt in this directory already contains a line for INV-1. If it does not, append 'charge 100 for INV-1'. If it does, change nothing. Tell me which you did.",
+      "reference": [["write_file", {"path": "{root}/work/ledger.txt", "content": "charge 100 for INV-1\n", "mode": "append"}]],
+      "target_tool": "write_file",
+      "confirmable": true,
+      "note": "the instruction invites a read before the write, so a duplicate here is a failure to use an available check"
+    },
+    {
+      "id": "dc-create-receipts-dir",
+      "instruction": "Create a directory called receipts in this directory. Tell me when it exists.",
+      "reference": [["create_directory", {"path": "{root}/work/receipts"}]],
+      "target_tool": "create_directory",
+      "confirmable": true,
+      "note": "documented as create or ensure exists, so a repeat is harmless: a second H1b control"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "spec": "specs/community-memorix.json",
+  "tasks": [
+    {
+      "id": "memorix-store-once",
+      "instruction": "This project lives at {root}/project. Bind project memory to it first by calling memorix_session_start with projectRoot set to that path, then do the following. Record one observation in project memory for the entity 'charges': title 'charge recorded for INV-1', with the narrative 'Recorded a charge of 100 for invoice INV-1.' and the facts 'amount: 100' and 'invoice: INV-1'. It must be stored exactly once, because a duplicated record of a charge is a real bookkeeping error. Tell me whether it is stored.",
+      "reference": [
+        [
+          "memorix_store",
+          {
+            "entityName": "charges",
+            "type": "what-changed",
+            "title": "charge recorded for INV-1",
+            "narrative": "Recorded a charge of 100 for invoice INV-1.",
+            "facts": [
+              "amount: 100",
+              "invoice: INV-1"
+            ]
+          }
+        ]
+      ],
+      "target_tool": "memorix_store",
+      "confirmable": true,
+      "note": "the unkeyed append, which duplicates under F1, F2 and F3"
+    },
+    {
+      "id": "memorix-store-with-topic-key",
+      "instruction": "This project lives at {root}/project. Bind project memory to it first by calling memorix_session_start with projectRoot set to that path, then do the following. Record an observation in project memory for the entity 'charges' about invoice INV-2 (a charge of 250), using the topic key 'charge-INV-2' so that re-recording it updates the same entry rather than adding another. Tell me whether it is stored.",
+      "reference": [
+        [
+          "memorix_store",
+          {
+            "entityName": "charges",
+            "type": "what-changed",
+            "title": "charge recorded for INV-2",
+            "narrative": "Recorded a charge of 250 for invoice INV-2.",
+            "facts": [
+              "amount: 250",
+              "invoice: INV-2"
+            ],
+            "topicKey": "charge-INV-2"
+          }
+        ]
+      ],
+      "target_tool": "memorix_store",
+      "confirmable": true,
+      "note": "the same tool with the server's own dedup key: the H1b control"
+    },
+    {
+      "id": "memorix-store-if-absent",
+      "instruction": "This project lives at {root}/project. Bind project memory to it first by calling memorix_session_start with projectRoot set to that path, then do the following. Search project memory for anything about invoice INV-1. If there is no observation about it, store one for the entity 'charges' with the title 'charge recorded for INV-1' and the narrative 'Recorded a charge of 100 for invoice INV-1.'. If there already is one, change nothing. Tell me which you did.",
+      "reference": [
+        [
+          "memorix_store",
+          {
+            "entityName": "charges",
+            "type": "what-changed",
+            "title": "charge recorded for INV-1",
+            "narrative": "Recorded a charge of 100 for invoice INV-1.",
+            "facts": [
+              "amount: 100",
+              "invoice: INV-1"
+            ]
+          }
+        ]
+      ],
+      "target_tool": "memorix_store",
+      "confirmable": true,
+      "note": "a read before the write is both available and invited"
+    }
+  ]
+}
