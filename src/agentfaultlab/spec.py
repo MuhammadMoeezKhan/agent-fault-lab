@@ -210,6 +210,74 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
     return target, fixtures
 
 
+def load_tasks(path: str) -> tuple[ServerTarget, list["AgentTask"]]:
+    """Load a task file: a pointer to a server spec plus the agent tasks.
+
+    The spec path is resolved relative to the task file, so a task file and
+    the spec it names travel together.
+    """
+    from .consequence import AgentTask
+
+    with open(path, encoding="utf-8") as handle:
+        try:
+            document = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise SpecError(f"{path}: {exc}") from exc
+    spec_path = document.get("spec")
+    if not spec_path:
+        raise SpecError(f"{path}: a task file needs a 'spec' pointing at a server")
+    if not os.path.isabs(spec_path):
+        # Try, in order: next to the task file, relative to the working
+        # directory, and relative to the task file's parent directory. That
+        # covers a task file kept beside its spec and one kept in a tasks/
+        # subdirectory referring to the spec by its repository path.
+        here = os.path.dirname(os.path.abspath(path))
+        candidates = [
+            os.path.join(here, spec_path),
+            os.path.abspath(spec_path),
+            os.path.normpath(os.path.join(here, "..", spec_path)),
+            os.path.normpath(os.path.join(here, "..", "..", spec_path)),
+        ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                spec_path = candidate
+                break
+        else:
+            raise SpecError(
+                f"{path}: cannot find the server spec {document['spec']!r}; "
+                f"looked in {', '.join(candidates)}"
+            )
+    target, _ = load(spec_path)
+
+    tasks = []
+    seen: set[str] = set()
+    for raw in document.get("tasks") or []:
+        for required in ("id", "instruction", "reference", "target_tool"):
+            if required not in raw:
+                raise SpecError(f"{path}: a task is missing '{required}'")
+        if raw["id"] in seen:
+            raise SpecError(f"{path}: duplicate task id {raw['id']!r}")
+        seen.add(raw["id"])
+        reference = tuple(
+            (name, arguments) for name, arguments in raw["reference"]
+        )
+        if not reference:
+            raise SpecError(f"{path}: task {raw['id']} has an empty reference")
+        tasks.append(
+            AgentTask(
+                id=raw["id"],
+                instruction=raw["instruction"],
+                reference=reference,
+                target_tool=raw["target_tool"],
+                confirmable=raw.get("confirmable"),
+                note=raw.get("note", ""),
+            )
+        )
+    if not tasks:
+        raise SpecError(f"{path}: no tasks")
+    return target, tasks
+
+
 def _assign_ids(fixtures: list[Fixture]) -> None:
     """Give every fixture a unique id, defaulting to the tool name.
 

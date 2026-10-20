@@ -1,0 +1,48 @@
+{
+  "spec": "specs/reference-filesystem.json",
+  "tasks": [
+    {
+      "id": "fs-append-charge-line",
+      "instruction": "The file ledger.txt currently holds one line, 'opening balance 0'. Add a second line that reads exactly 'charge 100' and nothing else. The file must end up with exactly two lines. Tell me the final contents.",
+      "reference": [
+        ["edit_file", {"path": "{root}/ledger.txt", "edits": [{"oldText": "opening balance 0", "newText": "opening balance 0\ncharge 100"}]}]
+      ],
+      "target_tool": "edit_file",
+      "confirmable": true,
+      "note": "edit_file duplicates under a retry, per the audit"
+    },
+    {
+      "id": "fs-write-notes",
+      "instruction": "Replace the contents of notes.txt with exactly these two lines: 'line one' then 'line two'. Confirm what the file holds.",
+      "reference": [["write_file", {"path": "{root}/notes.txt", "content": "line one\nline two\n"}]],
+      "target_tool": "write_file",
+      "confirmable": true,
+      "note": "an overwrite, so a duplicate leaves no trace. A control"
+    },
+    {
+      "id": "fs-create-directory",
+      "instruction": "Create the directory new/inner. Tell me whether it exists.",
+      "reference": [["create_directory", {"path": "{root}/new/inner"}]],
+      "target_tool": "create_directory",
+      "confirmable": true
+    },
+    {
+      "id": "fs-move-notes",
+      "instruction": "Rename notes.txt to moved.txt. Confirm the result.",
+      "reference": [["move_file", {"source": "{root}/notes.txt", "destination": "{root}/moved.txt"}]],
+      "target_tool": "move_file",
+      "confirmable": true,
+      "note": "a repeat has nothing to move, so the backend refuses it"
+    },
+    {
+      "id": "fs-append-then-read",
+      "instruction": "Add the line 'charge 250' to the end of ledger.txt, keeping the existing line. Then read the file back and tell me exactly what it contains.",
+      "reference": [
+        ["edit_file", {"path": "{root}/ledger.txt", "edits": [{"oldText": "opening balance 0", "newText": "opening balance 0\ncharge 250"}]}]
+      ],
+      "target_tool": "edit_file",
+      "confirmable": true,
+      "note": "the instruction asks for a read-back, so the agent has no excuse for a wrong claim"
+    }
+  ]
+}

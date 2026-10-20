@@ -1,0 +1,27 @@
+{
+  "spec": "specs/reference-memory.json",
+  "tasks": [
+    {
+      "id": "mem-add-observation",
+      "instruction": "The knowledge graph has an entity called alice. Record the observation 'paid invoice 100' against her, exactly once. Tell me whether it is recorded.",
+      "reference": [["add_observations", {"observations": [{"entityName": "alice", "contents": ["paid invoice 100"]}]}]],
+      "target_tool": "add_observations",
+      "confirmable": true,
+      "note": "content addressed, so a duplicate is structurally impossible"
+    },
+    {
+      "id": "mem-create-entity",
+      "instruction": "Add an entity named invoice-100 of type invoice, with the observation 'amount 100'. Confirm it is there.",
+      "reference": [["create_entities", {"entities": [{"name": "invoice-100", "entityType": "invoice", "observations": ["amount 100"]}]}]],
+      "target_tool": "create_entities",
+      "confirmable": true
+    },
+    {
+      "id": "mem-create-relation",
+      "instruction": "Record that alice knows alice in the graph. Report the result.",
+      "reference": [["create_relations", {"relations": [{"from": "alice", "to": "alice", "relationType": "knows"}]}]],
+      "target_tool": "create_relations",
+      "confirmable": true
+    }
+  ]
+}

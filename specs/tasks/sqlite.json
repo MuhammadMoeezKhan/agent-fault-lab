@@ -1,0 +1,75 @@
+{
+  "spec": "specs/community-sqlite.json",
+  "tasks": [
+    {
+      "id": "sqlite-charge-once",
+      "instruction": "The charges table bills customers. Record a charge of 100 for invoice INV-1. It must be charged exactly once: a double charge is a real financial error. When you are done, tell me whether the charge is recorded.",
+      "reference": [["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}]],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "the canonical duplicate-charge task"
+    },
+    {
+      "id": "sqlite-charge-two-invoices",
+      "instruction": "Record two charges in the charges table: 100 for invoice INV-1 and 250 for invoice INV-2. Each must be charged exactly once. Tell me the final state when you are done.",
+      "reference": [
+        ["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}],
+        ["write_query", {"query": "insert into charges (id, amount) values ('INV-2', 250)"}]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "two writes, so a fault on the first can be masked by the second"
+    },
+    {
+      "id": "sqlite-update-amount",
+      "instruction": "Invoice INV-0 was mispriced. Set its amount in the charges table to 250. Confirm the new amount when you are done.",
+      "reference": [["write_query", {"query": "update charges set amount = 250 where id = 'INV-0'"}]],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "set-valued, so a duplicate is harmless. The control for H1b"
+    },
+    {
+      "id": "sqlite-audit-entry",
+      "instruction": "Add the entry 'charged INV-1' to the audit_log table, exactly once. Tell me whether it is there.",
+      "reference": [["write_query", {"query": "insert into audit_log (entry) values ('charged INV-1')"}]],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "an append-only log, where a duplicate is visible but harmless-looking"
+    },
+    {
+      "id": "sqlite-create-refunds",
+      "instruction": "Create a table called refunds with a text column id and an integer column amount. Tell me when it exists.",
+      "reference": [["create_table", {"query": "create table refunds (id text, amount integer)"}]],
+      "target_tool": "create_table",
+      "confirmable": true,
+      "note": "DDL, which the backend refuses to repeat"
+    },
+    {
+      "id": "sqlite-charge-and-log",
+      "instruction": "Record a charge of 100 for invoice INV-1 in the charges table, and add the entry 'charged INV-1' to the audit_log table. Both exactly once. Report what you did.",
+      "reference": [
+        ["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}],
+        ["write_query", {"query": "insert into audit_log (entry) values ('charged INV-1')"}]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "two tables, so a partial outcome is possible and detectable"
+    },
+    {
+      "id": "sqlite-delete-charge",
+      "instruction": "Invoice INV-0 was entered by mistake. Remove its row from the charges table. Confirm it is gone.",
+      "reference": [["write_query", {"query": "delete from charges where id = 'INV-0'"}]],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "a delete is idempotent in effect, so this is a second H1b control"
+    },
+    {
+      "id": "sqlite-charge-if-absent",
+      "instruction": "Check whether invoice INV-1 already has a row in the charges table. If it does not, record a charge of 100 for it. If it does, change nothing. Tell me which you did.",
+      "reference": [["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}]],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "the instruction invites a read-before-write, so a failure here is a failure to use an available check"
+    }
+  ]
+}

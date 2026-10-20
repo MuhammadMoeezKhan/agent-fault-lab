@@ -1,0 +1,38 @@
+{
+  "spec": "specs/reference-git.json",
+  "tasks": [
+    {
+      "id": "git-commit-staged",
+      "instruction": "The repository has a staged change. Commit it with the message 'record charge for INV-1'. Do not create more than one commit. Tell me whether the commit exists.",
+      "reference": [["git_commit", {"repo_path": "{root}/repo", "message": "record charge for INV-1"}]],
+      "target_tool": "git_commit",
+      "confirmable": true
+    },
+    {
+      "id": "git-stage-and-commit",
+      "instruction": "The file extra.txt is untracked. Stage it and commit it with the message 'add extra'. Exactly one commit. Report the result.",
+      "reference": [
+        ["git_add", {"repo_path": "{root}/repo", "files": ["extra.txt"]}],
+        ["git_commit", {"repo_path": "{root}/repo", "message": "add extra"}]
+      ],
+      "target_tool": "git_commit",
+      "confirmable": true,
+      "note": "the staged charge.txt is committed alongside, so the oracle covers both"
+    },
+    {
+      "id": "git-create-branch",
+      "instruction": "Create a branch called release. Do not switch to it. Tell me whether it exists.",
+      "reference": [["git_create_branch", {"repo_path": "{root}/repo", "branch_name": "release"}]],
+      "target_tool": "git_create_branch",
+      "confirmable": true
+    },
+    {
+      "id": "git-stage-only",
+      "instruction": "Stage the untracked file extra.txt, but do not commit anything. Confirm what is staged.",
+      "reference": [["git_add", {"repo_path": "{root}/repo", "files": ["extra.txt"]}]],
+      "target_tool": "git_add",
+      "confirmable": true,
+      "note": "git_add is genuinely idempotent, so this is a clean-behaviour control"
+    }
+  ]
+}

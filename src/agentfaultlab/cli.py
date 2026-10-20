@@ -8,6 +8,7 @@ audit from a spec file and is the command a tool author would put in CI.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Optional, Sequence
 
@@ -76,6 +77,51 @@ def _add_check(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "consequence",
+        help="run agent episodes against a server through the fault proxy",
+        description=(
+            "Gives a real agent a task on a real server, injects a fault, and "
+            "scores what landed against what the agent claimed. The Claude "
+            "Code arm is capped by the budget approved in DECISIONS.md Q3."
+        ),
+    )
+    parser.add_argument("tasks", help="path to a task file (specs/tasks/*.json)")
+    parser.add_argument(
+        "--agent",
+        default="ollama",
+        help="ollama[:model], or claude[:model]",
+    )
+    parser.add_argument(
+        "--conditions",
+        default="clean,F1",
+        help="comma separated: clean, or a fault id aimed at each task's target tool",
+    )
+    parser.add_argument("--arms", default="baseline", help="baseline,unconfirmed_allowed")
+    parser.add_argument("--repeats", type=int, default=1, help="episodes per cell")
+    parser.add_argument("--task", action="append", help="limit to this task id")
+    parser.add_argument("--out", help="write the Markdown summary here")
+    parser.add_argument("--csv", help="write the episode rows here")
+    parser.add_argument("--trace-dir", help="write a proxy trace per episode here")
+    parser.add_argument(
+        "--ledger",
+        default=os.path.expanduser("~/.agent-fault-lab/episodes.json"),
+        help="where the daily episode budget is tracked",
+    )
+    parser.add_argument("--daily-cap", type=int, default=35)
+    parser.add_argument(
+        "--any-hour",
+        action="store_true",
+        help="skip the off-hours check (only if the approval has changed)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the episode plan and the budget, and run nothing",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-fault-lab",
@@ -98,6 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     _add_proxy(subparsers)
     _add_check(subparsers)
+    _add_consequence(subparsers)
     return parser
 
 
@@ -166,6 +213,138 @@ def _run_check(args: argparse.Namespace) -> int:
     return 0 if args.exit_zero else report.exit_code(verdicts)
 
 
+def _build_agent(descriptor: str):
+    """`ollama`, `ollama:qwen3:8b`, `claude`, or `claude:sonnet`."""
+    kind, _, model = descriptor.partition(":")
+    kind = kind.strip().lower()
+    if kind == "ollama":
+        from .agents_local import OllamaAgent, available
+
+        if not available():
+            raise SystemExit(
+                "the local model server is not reachable at 127.0.0.1:11434. "
+                "Start it with `ollama serve`."
+            )
+        return OllamaAgent(model=model or "qwen3:8b")
+    if kind in ("claude", "claude-code"):
+        from .consequence import ClaudeCodeAgent
+
+        return ClaudeCodeAgent(model=model or "sonnet")
+    raise SystemExit(f"unknown agent {descriptor!r}; use ollama[:model] or claude[:model]")
+
+
+def _run_consequence(args: argparse.Namespace) -> int:
+    from . import spec
+    from .consequence import (
+        ConsequenceRunner,
+        EpisodeBudget,
+        BudgetError,
+        summarise,
+    )
+
+    target, tasks = spec.load_tasks(args.tasks)
+    if args.task:
+        wanted = set(args.task)
+        tasks = [task for task in tasks if task.id in wanted]
+        if not tasks:
+            print(f"no task matches {sorted(wanted)}", file=sys.stderr)
+            return 2
+    conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    for condition in conditions:
+        if condition != "clean":
+            taxonomy.get(condition)
+
+    planned = len(tasks) * len(conditions) * len(arms) * args.repeats
+    agent = _build_agent(args.agent)
+    # Only the subscription arm draws on a rate limit that is shared with his
+    # own interactive work, so only that arm is metered.
+    meters = args.agent.split(":")[0].lower() in ("claude", "claude-code")
+    budget = (
+        EpisodeBudget(
+            args.ledger, daily_cap=args.daily_cap, enforce_hours=not args.any_hour
+        )
+        if meters
+        else None
+    )
+
+    print(f"agent: {agent.name}")
+    print(
+        f"plan: {len(tasks)} tasks x {len(conditions)} conditions x {len(arms)} arms "
+        f"x {args.repeats} repeats = {planned} episodes"
+    )
+    if budget is not None:
+        print(
+            f"budget: {budget.used_today()} used today, {budget.remaining_today()} "
+            f"left of {budget.daily_cap}; in window: {budget.in_window()}"
+        )
+        try:
+            budget.check(planned)
+        except BudgetError as exc:
+            print(f"refusing to start: {exc}", file=sys.stderr)
+            return 3
+    if args.dry_run:
+        for task in tasks:
+            print(f"  {task.id}: target={task.target_tool}")
+        return 0
+
+    runner = ConsequenceRunner(target, budget=budget, trace_dir=args.trace_dir)
+    results = []
+    for task in tasks:
+        for condition in conditions:
+            fault = None if condition == "clean" else f"{condition}:{task.target_tool}@1"
+            for arm in arms:
+                for _ in range(args.repeats):
+                    result = runner.run_episode(
+                        task, agent, condition=condition, fault=fault, arm=arm
+                    )
+                    results.append(result)
+                    flag = "ERR" if result.error else ""
+                    print(
+                        f"  {task.id:28s} {condition:6s} {arm:20s} "
+                        f"state={result.multiplicity:6s} claim={result.claim:12s} "
+                        f"{flag}"
+                    )
+
+    rows = summarise(results)
+    lines = [
+        "# Consequence study",
+        "",
+        "State comes from an observer reading the backend. The claim comes from "
+        "the agent's final message, read by a keyword parser that still needs "
+        "hand validation, so treat claim-derived rates as provisional.",
+        "",
+        "| agent | arm | condition | episodes | task success | duplicate | "
+        "false success | honest unconfirmed | false failure | errored |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['agent']} | {row['arm']} | {row['condition']} "
+            f"| {row['episodes']} | {row['task_success']} | {row['duplicate_effect']} "
+            f"| {row['false_success']} | {row['honest_unconfirmed']} "
+            f"| {row['false_failure']} | {row['errored']} |"
+        )
+    markdown = "\n".join(lines) + "\n"
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            handle.write(markdown)
+    else:
+        print()
+        print(markdown)
+    if args.csv:
+        import csv as _csv
+
+        with open(args.csv, "w", newline="", encoding="utf-8") as handle:
+            writer = _csv.DictWriter(
+                handle, fieldnames=list(results[0].as_row())
+            )
+            writer.writeheader()
+            for result in results:
+                writer.writerow(result.as_row())
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     # `agent-fault-lab --tasks 10` kept working when subcommands arrived.
@@ -203,6 +382,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     if command == "check":
         return _run_check(args)
+    if command == "consequence":
+        return _run_consequence(args)
     parser.print_help()
     return 2
 

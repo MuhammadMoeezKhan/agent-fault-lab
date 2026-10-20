@@ -79,15 +79,29 @@ def _get(url: str, *, timeout: float = 30.0, retries: int = 3) -> Optional[Any]:
 
 # ------------------------------------------------------------------- snapshot
 
-def iter_registry(page_size: int = 100, max_pages: int = 1000) -> Iterator[dict[str, Any]]:
+def iter_registry(
+    page_size: int = 100, max_pages: int = 20000
+) -> Iterator[dict[str, Any]]:
+    """Yield every registry entry, then a final marker saying if it finished.
+
+    The registry pages alphabetically by server name and caps `limit` at 100,
+    so a run that stops early stops in the middle of the alphabet. A draw from
+    a truncated snapshot would be biased toward names starting with the first
+    letters, which is why completeness is tracked rather than assumed.
+    """
     cursor: Optional[str] = None
     pages = 0
-    while pages < max_pages:
+    while True:
+        if pages >= max_pages:
+            yield {"__truncated__": True, "pages": pages, "last_cursor": cursor}
+            return
         url = f"{REGISTRY}?limit={page_size}"
         if cursor:
             url += f"&cursor={urllib.parse.quote(cursor, safe='')}"
         payload = _get(url)
         if not payload:
+            yield {"__truncated__": True, "pages": pages, "last_cursor": cursor,
+                   "reason": "a registry page could not be fetched"}
             return
         entries = payload.get("servers") or []
         for entry in entries:
@@ -95,15 +109,28 @@ def iter_registry(page_size: int = 100, max_pages: int = 1000) -> Iterator[dict[
         cursor = (payload.get("metadata") or {}).get("nextCursor")
         pages += 1
         if not cursor or not entries:
+            yield {"__complete__": True, "pages": pages}
             return
         time.sleep(0.2)  # be a polite client of a free public service
 
 
-def snapshot(out_dir: str, page_size: int, max_pages: int) -> str:
+def snapshot(
+    out_dir: str, page_size: int, max_pages: int, latest_only: bool = True
+) -> str:
+    """Page the registry to a JSONL file, with a trailer recording totals.
+
+    By default only the entries the registry flags as latest are kept. The
+    registry stores every published version, so keeping them all multiplies
+    the file size several fold without changing the sampling population,
+    which is "the current version of every server". The trailer records how
+    many were seen and how many kept, so the filtering is auditable.
+    """
     os.makedirs(out_dir, exist_ok=True)
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = os.path.join(out_dir, f"registry-{stamp}.jsonl")
-    count = 0
+    seen = 0
+    kept = 0
+    finish: dict[str, Any] = {"__complete__": False}
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
@@ -112,16 +139,49 @@ def snapshot(out_dir: str, page_size: int, max_pages: int) -> str:
                     "source": REGISTRY,
                     "fetched_at": stamp,
                     "page_size": page_size,
+                    "latest_only": latest_only,
                 }
             )
             + "\n"
         )
         for entry in iter_registry(page_size, max_pages):
+            if entry.get("__truncated__") or entry.get("__complete__"):
+                finish = entry
+                break
+            seen += 1
+            if latest_only:
+                meta = (entry.get("_meta") or {}).get(
+                    "io.modelcontextprotocol.registry/official"
+                ) or {}
+                if not meta.get("isLatest"):
+                    continue
             handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
-            count += 1
-            if count % 500 == 0:
-                print(f"  {count} entries", file=sys.stderr)
-    print(f"wrote {count} registry entries to {path}")
+            kept += 1
+            if kept % 500 == 0:
+                print(f"  {kept} kept of {seen} seen", file=sys.stderr)
+        handle.write(
+            json.dumps(
+                {
+                    "__trailer__": True,
+                    "entries_seen": seen,
+                    "entries_kept": kept,
+                    "complete": bool(finish.get("__complete__")),
+                    "truncated": bool(finish.get("__truncated__")),
+                    "truncation_reason": finish.get("reason", ""),
+                    "pages": finish.get("pages"),
+                }
+            )
+            + "\n"
+        )
+    status = "complete" if finish.get("__complete__") else "TRUNCATED"
+    print(f"wrote {kept} entries (of {seen} seen) to {path} [{status}]")
+    if finish.get("__truncated__"):
+        print(
+            "  warning: the snapshot is incomplete, so a random draw from it "
+            "would be biased toward earlier server names. Re-run with a higher "
+            "--max-pages before using it for Frame 3.",
+            file=sys.stderr,
+        )
     return path
 
 
@@ -269,9 +329,11 @@ def build_frames(
     seed: int,
     draw: int,
     downloads: int,
+    allow_truncated: bool = False,
 ) -> None:
     entries = []
     header: dict[str, Any] = {}
+    trailer: dict[str, Any] = {}
     with open(snapshot_path, encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
@@ -280,7 +342,26 @@ def build_frames(
             if record.get("__snapshot__"):
                 header = record
                 continue
+            if record.get("__trailer__"):
+                trailer = record
+                continue
             entries.append(record)
+
+    if trailer.get("truncated") and not allow_truncated:
+        raise SystemExit(
+            f"{snapshot_path} is an incomplete snapshot "
+            f"({trailer.get('entries_seen')} entries, stopped after "
+            f"{trailer.get('pages')} pages). The registry pages alphabetically, "
+            "so a random draw from it would over-represent early names. Re-run "
+            "the snapshot, or pass --allow-truncated to build frames anyway "
+            "and report the bias."
+        )
+    if not trailer:
+        print(
+            "  warning: this snapshot has no trailer, so completeness is "
+            "unknown. It was probably written by an older version.",
+            file=sys.stderr,
+        )
 
     latest = latest_only(entries)
     rows = [classify(entry) for entry in latest]
@@ -325,6 +406,10 @@ def build_frames(
         "",
         f"Snapshot: `{os.path.basename(snapshot_path)}` fetched "
         f"{header.get('fetched_at', 'unknown')} from {header.get('source', REGISTRY)}.",
+        f"Snapshot completeness: "
+        f"{'complete' if trailer.get('complete') else 'INCOMPLETE (draw is biased)'}; "
+        f"{trailer.get('entries_kept', len(entries))} entries kept of "
+        f"{trailer.get('entries_seen', 'unknown')} seen.",
         f"Draw seed: `{seed}` (combined with the snapshot's fetch time).",
         "",
         f"- registry entries in the snapshot: {len(entries)}",
@@ -384,13 +469,23 @@ def main() -> int:
     snap = sub.add_parser("snapshot", help="page the registry to a JSONL snapshot")
     snap.add_argument("--out", default="research/frames")
     snap.add_argument("--page-size", type=int, default=100)
-    snap.add_argument("--max-pages", type=int, default=1000)
+    snap.add_argument("--max-pages", type=int, default=20000)
+    snap.add_argument(
+        "--all-versions",
+        action="store_true",
+        help="keep every published version, not just the latest of each server",
+    )
 
     frames = sub.add_parser("frames", help="derive frames from a snapshot, offline")
     frames.add_argument("snapshot")
     frames.add_argument("--out", default="research/frames")
     frames.add_argument("--seed", type=int, default=20261019)
     frames.add_argument("--draw", type=int, default=40)
+    frames.add_argument(
+        "--allow-truncated",
+        action="store_true",
+        help="build frames from an incomplete snapshot and report the bias",
+    )
     frames.add_argument(
         "--downloads",
         type=int,
@@ -400,7 +495,12 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.command == "snapshot":
-        snapshot(args.out, args.page_size, args.max_pages)
+        snapshot(
+            args.out,
+            args.page_size,
+            args.max_pages,
+            latest_only=not args.all_versions,
+        )
         return 0
     build_frames(
         args.snapshot,
@@ -408,6 +508,7 @@ def main() -> int:
         seed=args.seed,
         draw=args.draw,
         downloads=args.downloads,
+        allow_truncated=args.allow_truncated,
     )
     return 0
 
