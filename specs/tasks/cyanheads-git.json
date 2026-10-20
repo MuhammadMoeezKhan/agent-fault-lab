@@ -1,0 +1,29 @@
+{
+  "spec": "specs/community-cyanheads-git.json",
+  "tasks": [
+    {
+      "id": "cygit-commit-once",
+      "instruction": "The repository at {root}/repo has a staged file recording a charge. Commit it exactly once with the message 'record charge for INV-1'. A duplicated commit of a charge is a real bookkeeping error. Tell me whether the commit is there.",
+      "reference": [["git_commit", {"path": "{root}/repo", "message": "record charge for INV-1"}]],
+      "target_tool": "git_commit",
+      "confirmable": true,
+      "note": "the same task as the reference git server's, on a second implementation"
+    },
+    {
+      "id": "cygit-stage-file",
+      "instruction": "In the repository at {root}/repo, stage the untracked file extra.txt, exactly once. Confirm what is staged when you are done.",
+      "reference": [["git_add", {"path": "{root}/repo", "paths": ["extra.txt"]}]],
+      "target_tool": "git_add",
+      "confirmable": true,
+      "note": "staging is idempotent in effect: an H1b control, and the list argument makes F5 apply"
+    },
+    {
+      "id": "cygit-create-branch",
+      "instruction": "In the repository at {root}/repo, create a branch called 'release'. Tell me when it exists.",
+      "reference": [["git_branch", {"path": "{root}/repo", "mode": "create", "branchName": "release"}]],
+      "target_tool": "git_branch",
+      "confirmable": true,
+      "note": "a repeat is refused by the backend, so the agent gets an error it has to interpret"
+    }
+  ]
+}

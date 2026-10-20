@@ -544,6 +544,34 @@ class ConsequenceRunner:
 
     # ----------------------------------------------------------------- episode
 
+    def _run_prelude(self, root: str) -> None:
+        """Run the spec's prelude calls before the agent is given the server.
+
+        Some servers refuse to work until a one-off setup call has been made
+        (@contentrain/mcp has to initialise its directory before any content
+        can be saved). That is state, not part of the task, so it happens in
+        its own session with no fault injected, exactly as it does for the
+        oracle's clean baselines. A session-scoped binding cannot be done this
+        way, because it belongs to the agent's own connection: those servers
+        get the step in the task instruction instead.
+        """
+        calls = self.target.resolve_prelude(root)
+        if not calls:
+            return
+        with ServerSession(
+            self.target.resolve_command(root),
+            cwd=root if self.target.cwd_is_root else None,
+            env=self.target.resolve_env(root) or None,
+            timeout_s=self.target.timeout_s,
+        ) as session:
+            session.list_tools()
+            for tool, arguments in calls:
+                call = session.call_tool(tool, arguments)
+                if not call.caller_saw_success:
+                    raise RuntimeError(
+                        f"prelude call {tool} failed on {self.target.name}"
+                    )
+
     def run_episode(
         self,
         task: AgentTask,
@@ -578,6 +606,7 @@ class ConsequenceRunner:
             if self.target.setup:
                 self.target.setup(root)
             observer = self.target.observer(root)
+            self._run_prelude(root)
             config_path = os.path.join(root, ".afl-mcp.json")
             trace_path = (
                 os.path.join(

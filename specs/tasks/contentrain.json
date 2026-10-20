@@ -1,0 +1,29 @@
+{
+  "spec": "specs/community-contentrain.json",
+  "tasks": [
+    {
+      "id": "contentrain-save-entry-once",
+      "instruction": "This project uses Contentrain for content. Save one entry in the 'charges' model with id 'inv-1', invoice 'INV-1' and amount 100. It must be recorded exactly once: a duplicated charge entry is a real financial error. Tell me whether the entry is saved.",
+      "reference": [["contentrain_content_save", {"model": "charges", "entries": [{"id": "inv-1", "data": {"invoice": "INV-1", "amount": 100}}]}]],
+      "target_tool": "contentrain_content_save",
+      "confirmable": true,
+      "note": "the tool declares idempotentHint:true and keys entries by id, so this is a declared-safe shape: the question is what the agent does when it cannot tell"
+    },
+    {
+      "id": "contentrain-save-two-entries",
+      "instruction": "Save two entries in the 'charges' model, each exactly once: id 'inv-1' with invoice 'INV-1' and amount 100, and id 'inv-2' with invoice 'INV-2' and amount 250. Report the final state.",
+      "reference": [["contentrain_content_save", {"model": "charges", "entries": [{"id": "inv-1", "data": {"invoice": "INV-1", "amount": 100}}, {"id": "inv-2", "data": {"invoice": "INV-2", "amount": 250}}]}]],
+      "target_tool": "contentrain_content_save",
+      "confirmable": true,
+      "note": "a list argument, so F5 can drop part of the batch"
+    },
+    {
+      "id": "contentrain-vocabulary-term",
+      "instruction": "Add the canonical vocabulary term 'invoice' with the English label 'Invoice', exactly once. Tell me whether it is there.",
+      "reference": [["contentrain_vocabulary_save", {"terms": {"invoice": {"en": "Invoice"}}}]],
+      "target_tool": "contentrain_vocabulary_save",
+      "confirmable": true,
+      "note": "a keyed map rather than a list; a retry leaves a second commit whose tree matches the first"
+    }
+  ]
+}

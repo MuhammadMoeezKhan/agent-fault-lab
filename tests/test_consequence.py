@@ -334,3 +334,48 @@ def test_mcp_config_omits_the_fault_for_a_clean_episode(tmp_path):
 )
 def test_parse_claim_reads_negated_success_as_failure(message, expected):
     assert parse_claim(message) == expected
+
+
+def test_an_episode_runs_the_spec_prelude_before_the_agent(tmp_path):
+    """Setup a server only accepts as a tool call still happens before the task.
+
+    @contentrain/mcp has to initialise its own directory before any content
+    can be saved, and that is state rather than part of the task, so it runs
+    in its own session with no fault injected, exactly as it does for the
+    oracle's baselines.
+    """
+    import os
+
+    from agentfaultlab.audit import Fixture, ServerTarget
+    from agentfaultlab.consequence import AgentTask
+    from agentfaultlab.observers import FilesystemObserver
+
+    target = ServerTarget(
+        name="fake",
+        command=[sys.executable, FAKE_SERVER],
+        observer=lambda root: FilesystemObserver(root),
+        prelude=[("append_line", {"path": "{root}/prelude.txt", "line": "ready"})],
+    )
+
+    seen: dict[str, bool] = {}
+
+    class Stub:
+        name = "stub"
+        server_name = "target"
+
+        def run(self, instruction, mcp_config_path, cwd):
+            seen["prelude"] = os.path.exists(os.path.join(cwd, "prelude.txt"))
+            return {"text": "The line was added.", "turns": 1}
+
+    runner = ConsequenceRunner(target, settle_s=0.0)
+    task = AgentTask(
+        id="t1",
+        instruction="Append 'one' to notes.txt.",
+        reference=(("append_line", {"path": "{root}/notes.txt", "line": "one"}),),
+        target_tool="append_line",
+    )
+    result = runner.run_episode(task, Stub(), condition="clean")
+    assert seen["prelude"] is True
+    # The prelude's own file is part of every baseline, so it does not show up
+    # as an effect of the task.
+    assert result.multiplicity in ("none", "once", "other")
