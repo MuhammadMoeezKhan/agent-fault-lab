@@ -57,8 +57,24 @@ SECRET_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-#: Names that are the reference implementations, which form Frame 1.
-REFERENCE_PREFIXES = ("io.modelcontextprotocol/", "io.github.modelcontextprotocol/")
+#: Frame 1, the reference implementations, is a hardcoded list rather than a
+#: registry query, because **the official registry contains none of them**.
+#: Checked 2026-10-19 against a complete snapshot: zero entries have
+#: "modelcontextprotocol" anywhere in their server name, and
+#: `@modelcontextprotocol/server-filesystem` (about 440k weekly npm
+#: downloads) is absent while vanity packages with a few hundred downloads are
+#: present. Any study that samples "the ecosystem" from the registry alone
+#: therefore misses the most used servers in it, which is worth reporting in
+#: its own right.
+REFERENCE_PACKAGES = (
+    ("npx", "@modelcontextprotocol/server-filesystem"),
+    ("npx", "@modelcontextprotocol/server-memory"),
+    ("npx", "@modelcontextprotocol/server-everything"),
+    ("npx", "@modelcontextprotocol/server-sequential-thinking"),
+    ("uvx", "mcp-server-git"),
+    ("uvx", "mcp-server-fetch"),
+    ("uvx", "mcp-server-time"),
+)
 
 
 def _get(url: str, *, timeout: float = 30.0, retries: int = 3) -> Optional[Any]:
@@ -247,9 +263,7 @@ def classify(entry: dict[str, Any]) -> dict[str, Any]:
         "repository": (server.get("repository") or {}).get("url", ""),
         "status": meta.get("status", ""),
         "published_at": meta.get("publishedAt", ""),
-        "is_reference": any(
-            server.get("name", "").startswith(prefix) for prefix in REFERENCE_PREFIXES
-        ),
+        "is_reference": False,
         "package_count": len(packages),
         "remote_only": bool(remotes) and not packages,
         "registry_types": sorted({p.get("registryType", "") for p in packages}),
@@ -302,22 +316,50 @@ def classify(entry: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def add_npm_downloads(rows: list[dict[str, Any]], limit: int) -> None:
+def add_npm_downloads(
+    rows: list[dict[str, Any]], limit: int, seed: int
+) -> dict[str, Any]:
     """Weekly download counts for npm packages, as the popularity signal.
+
+    `limit` of -1 means every npm package, which is what a defensible
+    "popular" frame needs. A positive limit takes a **seeded random
+    subsample**, never the alphabetical head: an earlier version sliced the
+    first N and produced a Frame 2 whose "top by downloads" excluded the most
+    downloaded servers entirely, because the registry pages alphabetically.
 
     Only npm is queried. PyPI has no equivalent free point endpoint, so pypi
     servers carry no popularity number and are ranked separately. That
     asymmetry is a limitation to state in the paper, not something to paper
     over with a guess.
     """
-    targets = [row for row in rows if row["runner"] == "npx" and row["package"]][:limit]
-    print(f"fetching npm download counts for {len(targets)} packages", file=sys.stderr)
+    candidates = [row for row in rows if row["runner"] == "npx" and row["package"]]
+    if limit == 0:
+        return {"queried": 0, "population": len(candidates), "sampled": False}
+    if limit < 0 or limit >= len(candidates):
+        targets = candidates
+        sampled = False
+    else:
+        targets = random.Random(f"downloads:{seed}").sample(candidates, limit)
+        sampled = True
+    print(
+        f"fetching npm download counts for {len(targets)} of {len(candidates)} "
+        f"packages{' (random subsample)' if sampled else ''}",
+        file=sys.stderr,
+    )
+    got = 0
     for index, row in enumerate(targets, 1):
         payload = _get(NPM_DOWNLOADS + urllib.parse.quote(row["package"], safe="@/"))
         row["weekly_downloads"] = (payload or {}).get("downloads")
-        if index % 50 == 0:
+        got += row["weekly_downloads"] is not None
+        if index % 250 == 0:
             print(f"  {index}/{len(targets)}", file=sys.stderr)
-        time.sleep(0.1)
+        time.sleep(0.05)
+    return {
+        "queried": len(targets),
+        "population": len(candidates),
+        "answered": got,
+        "sampled": sampled,
+    }
 
 
 # ------------------------------------------------------------------- frames
@@ -366,8 +408,22 @@ def build_frames(
     latest = latest_only(entries)
     rows = [classify(entry) for entry in latest]
     rows.sort(key=lambda row: row["name"])
-    if downloads:
-        add_npm_downloads(rows, downloads)
+    download_stats = add_npm_downloads(rows, downloads, seed)
+
+    # Frame 1 is not derived from the registry; see REFERENCE_PACKAGES.
+    reference_rows = [
+        {
+            "name": f"reference/{package}",
+            "package": package,
+            "runner": runner,
+            "package_version": "",
+            "is_reference": True,
+            "repository": "https://github.com/modelcontextprotocol/servers",
+            "reason": "reference implementation, not listed in the registry",
+            "description": "official reference server",
+        }
+        for runner, package in REFERENCE_PACKAGES
+    ]
 
     os.makedirs(out_dir, exist_ok=True)
     all_path = os.path.join(out_dir, "frame-all.jsonl")
@@ -376,7 +432,7 @@ def build_frames(
             handle.write(json.dumps(row, separators=(",", ":")) + "\n")
 
     runnable = [row for row in rows if row["runnable"]]
-    reference = [row for row in rows if row["is_reference"]]
+    reference = reference_rows
     popular = sorted(
         (row for row in runnable if row.get("weekly_downloads")),
         key=lambda row: row["weekly_downloads"],
@@ -416,8 +472,20 @@ def build_frames(
         f"- distinct servers (latest version only): {len(rows)}",
         f"- locally runnable with npx or uvx, no declared credentials: "
         f"{len(runnable)} ({len(runnable) / len(rows):.1%})" if rows else "- no rows",
-        f"- reference servers (Frame 1): {len(reference)}",
+        f"- reference servers (Frame 1, hardcoded, absent from the registry): "
+        f"{len(reference)}",
+        f"- npm download counts fetched: {download_stats.get('queried', 0)} of "
+        f"{download_stats.get('population', 0)} npm packages"
+        + (" (RANDOM SUBSAMPLE, so Frame 2 is a sample of the popular tail, "
+           "not the true top)" if download_stats.get("sampled") else ""),
         f"- runnable with a weekly npm download count: {len(popular)}",
+        "",
+        "**The registry does not list the official reference servers.** A "
+        "complete snapshot contains no server whose name mentions "
+        "modelcontextprotocol, and the reference packages are absent while "
+        "vanity packages with a few hundred weekly downloads are present. A "
+        "study that samples the ecosystem from the registry alone misses the "
+        "most used servers in it. Frame 1 is therefore a hardcoded list.",
         f"- Frame 3 draw: {len(random_draw)}",
         "",
         "## Why servers were excluded",
@@ -489,8 +557,11 @@ def main() -> int:
     frames.add_argument(
         "--downloads",
         type=int,
-        default=400,
-        help="how many npm packages to fetch download counts for (0 to skip)",
+        default=-1,
+        help=(
+            "npm packages to fetch download counts for: -1 for all (default), "
+            "0 to skip, N for a seeded random subsample of N"
+        ),
     )
 
     args = parser.parse_args()

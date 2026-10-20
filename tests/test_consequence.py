@@ -225,3 +225,68 @@ def test_oracle_builds_the_three_reference_states(tmp_path):
     assert states["s1"] != states["s2"]
     # Cached, so a second call does not rebuild the backends.
     assert runner.oracle(task) is states
+
+
+# ------------------------------------------------------------------ mcp config
+
+def test_mcp_config_points_at_a_runnable_proxy_and_the_right_server(tmp_path):
+    """Regression: the proxy was looked up on PATH, where a venv's bin is not.
+
+    The agent launches the proxy as a subprocess, so the command written into
+    the config has to work without relying on the parent's PATH.
+    """
+    from agentfaultlab.audit import ServerTarget
+    from agentfaultlab.observers import FilesystemObserver
+
+    target = ServerTarget(
+        name="fake",
+        command=[sys.executable, FAKE_SERVER, "{root}"],
+        observer=lambda root: FilesystemObserver(root),
+        env={"SEED_DIR": "{root}"},
+    )
+
+    class Stub:
+        name = "stub"
+        server_name = "target"
+
+        def run(self, instruction, mcp_config_path, cwd):
+            raise AssertionError("not reached")
+
+    runner = ConsequenceRunner(target)
+    config_path = tmp_path / "mcp.json"
+    runner._write_mcp_config(
+        str(config_path), str(tmp_path), "F1:append_line@1", None, Stub()
+    )
+    config = json.loads(config_path.read_text())
+    entry = config["mcpServers"]["target"]
+    assert os.path.exists(entry["command"]), entry["command"]
+    assert "proxy" in entry["args"]
+    assert "--fault" in entry["args"]
+    # The server command follows a bare --, and {root} is substituted in both
+    # the command and the environment.
+    assert entry["args"][entry["args"].index("--") + 1] == sys.executable
+    assert entry["env"]["SEED_DIR"] == str(tmp_path)
+
+
+def test_mcp_config_omits_the_fault_for_a_clean_episode(tmp_path):
+    from agentfaultlab.audit import ServerTarget
+    from agentfaultlab.observers import FilesystemObserver
+
+    runner = ConsequenceRunner(
+        ServerTarget(
+            name="fake",
+            command=[sys.executable, FAKE_SERVER],
+            observer=lambda root: FilesystemObserver(root),
+        )
+    )
+
+    class Stub:
+        name = "stub"
+        server_name = "target"
+
+        def run(self, instruction, mcp_config_path, cwd):
+            raise AssertionError("not reached")
+
+    path = tmp_path / "mcp.json"
+    runner._write_mcp_config(str(path), str(tmp_path), None, None, Stub())
+    assert "--fault" not in json.loads(path.read_text())["mcpServers"]["target"]["args"]
