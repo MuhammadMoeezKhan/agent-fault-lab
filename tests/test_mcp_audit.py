@@ -708,3 +708,28 @@ def test_unproven_rows_are_left_out_of_the_rates():
     assert stats["unproven"] == 1
     # One duplicating fixture of one testable fixture, not of two.
     assert stats["duplicate_rate"].startswith("100.0% (1/1)")
+
+
+def test_f5_partial_batch_is_its_own_verdict():
+    """A prefix landing and then the whole list is not an unexplained state.
+
+    `append_many` on the fake server appends each line in a list. Under F5
+    the proxy forwards a prefix and drops the response, so the retry appends
+    the whole list on top: more than one application, less than two. That is
+    a distinct harm, and reporting it as DIVERGED filed a predictable outcome
+    as an anomaly.
+    """
+    from agentfaultlab.audit import PARTIAL
+
+    audit = Audit(make_target(), repeats=1)
+    tools = {tool.name: tool for tool in audit.list_tools()}
+    verdict = audit.run_tool(
+        Fixture(
+            tool="append_many",
+            arguments={"path": "log.txt", "lines": ["one", "two", "three"]},
+        ),
+        tools["append_many"],
+        modes=["F5"],
+    )[0]
+    assert verdict.verdict == PARTIAL
+    assert any("partial over-application" in note for note in verdict.notes)

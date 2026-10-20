@@ -79,6 +79,11 @@ NOT_MUTATING = "NOT_MUTATING"
 #: runs (an append only log with timestamps in it) cannot be audited this way,
 #: and saying so is better than reporting DIVERGED and calling it a finding.
 UNPROVEN = "UNPROVEN"
+#: F5 only. A prefix of a list argument committed, the caller was told
+#: nothing, and the retry applied the whole list on top. The end state then
+#: matches neither one clean application nor two, which is a distinct harm and
+#: not the same thing as a state the oracle cannot account for.
+PARTIAL = "PARTIAL"
 BROKEN = "BROKEN"
 
 
@@ -601,6 +606,17 @@ class Audit:
             return DUPLICATED
         if observed == {MULTIPLICITY_NONE} and expected == MULTIPLICITY_ONCE:
             return LOST
+        if mode.id == "F5":
+            # Expected by construction for an accumulating tool: the prefix
+            # landed, the retry applied the whole list, and the result is
+            # more than one application and less than two. Calling that
+            # DIVERGED would file a predictable outcome as an anomaly.
+            notes.append(
+                "a prefix of the list landed before the retry applied the "
+                "whole list, so the end state is neither one application nor "
+                "two: partial over-application"
+            )
+            return PARTIAL
         return DIVERGED
 
 

@@ -22,7 +22,8 @@ sys.path.insert(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"),
 )
 
-from agentfaultlab.audit import DUPLICATED, UNPROVEN  # noqa: E402
+from agentfaultlab.audit import DUPLICATED, PARTIAL, UNPROVEN  # noqa: E402
+from agentfaultlab.metrics import wilson_interval  # noqa: E402
 
 CONTROL = "F7"
 
@@ -44,10 +45,20 @@ def fixtures(rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], list[dict
     return grouped
 
 
-def rate(numerator: int, denominator: int) -> str:
+def rate(numerator: int, denominator: int, *, interval: bool = False) -> str:
+    """A rate with its denominator, and on request a 95% Wilson interval.
+
+    The interval is printed for the pooled numbers because the denominators
+    here are small: four of four is 100% with a lower bound of 51%, and a
+    reader who sees only the 100% is being misled by a sample of four.
+    """
     if denominator == 0:
         return "n/a (0)"
-    return f"{numerator / denominator:.0%} ({numerator}/{denominator})"
+    body = f"{numerator / denominator:.0%} ({numerator}/{denominator})"
+    if not interval:
+        return body
+    low, high = wilson_interval(numerator, denominator)
+    return f"{body}, 95% CI [{low:.0%}, {high:.0%}]"
 
 
 def describe(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -99,6 +110,9 @@ def describe(rows: list[dict[str, Any]]) -> dict[str, Any]:
     unconfirmable = {
         k for k, g in mutating.items() if any(row["confirmable"] is False for row in g)
     }
+    partial = {
+        k for k, g in mutating.items() if any(row["verdict"] == PARTIAL for row in g)
+    }
     control_failures = [
         row for row in rows
         if row["fault"] == CONTROL and row["verdict"] == DUPLICATED
@@ -109,16 +123,19 @@ def describe(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "mutating": len(mutating),
         "testable": len(testable),
         "duplicating": len(duplicating),
-        "duplicate_rate": rate(len(duplicating), len(testable)),
+        "duplicate_rate": rate(len(duplicating), len(testable), interval=True),
+        "testable_share": rate(len(testable), len(mutating), interval=True),
         "declares_idempotent_hint": rate(len(with_hint), len(mutating)),
         "safe_by_rejection": rate(len(rejected), len(mutating)),
         "mechanism_undecidable": rate(len(undecidable), len(mutating)),
         "unconfirmable": rate(len(unconfirmable), len(mutating)),
         "annotation_violations": violations,
         "control_failures": len(control_failures),
+        "partial": rate(len(partial), len(mutating)),
         "dedup_argument": rate(
             len([k for k, g in mutating.items() if g[0]["dedup_argument"]]),
             len(mutating),
+            interval=True,
         ),
     }
 
@@ -150,7 +167,7 @@ def main() -> int:
         "",
         f"- fixtures: {pooled['fixtures']}, of which unproven: {pooled['unproven']}",
         f"- mutating: {pooled['mutating']}, of which a duplicate could be seen "
-        f"at all: {pooled['testable']}",
+        f"at all: {pooled['testable']} ({pooled['testable_share']})",
         f"- **duplicate effect under at least one fault: "
         f"{pooled['duplicate_rate']}** of the testable mutating fixtures",
         f"- declares idempotentHint at all: "
@@ -162,6 +179,8 @@ def main() -> int:
         f"{pooled['mechanism_undecidable']}",
         f"- unconfirmable through the server's own read tools: "
         f"{pooled['unconfirmable']}",
+        f"- partial over-application under F5, where a list argument was "
+        f"tested: {pooled['partial']}",
         f"- control (F7) failures, which would invalidate the run: "
         f"{pooled['control_failures']}",
         "",

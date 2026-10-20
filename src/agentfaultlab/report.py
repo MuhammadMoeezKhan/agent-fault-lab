@@ -13,6 +13,7 @@ from .audit import (
     MECHANISM_ABSORBED,
     MECHANISM_REJECTED,
     NOT_MUTATING,
+    PARTIAL,
     SAFE,
     UNPROVEN,
     ToolVerdict,
@@ -156,6 +157,7 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         "annotation_violations": len(violating),
         "nondeterministic": len(flaky),
         "unproven": len(unproven),
+        "partial": len([row for row in rows if row.verdict == PARTIAL]),
         "control_failures": len(control_failures),
     }
 
@@ -194,6 +196,8 @@ def to_markdown(
         f"- nondeterministic rows (treat as unproven): {stats['nondeterministic']}",
         f"- rows with no verdict because the clean baselines were not "
         f"reproducible: {stats['unproven']}",
+        f"- partial over-application under F5 (a prefix landed, then the "
+        f"retry applied the whole list): {stats['partial']}",
     ]
     if server_info:
         reported = (server_info.get("serverInfo") or {}) if server_info else {}
