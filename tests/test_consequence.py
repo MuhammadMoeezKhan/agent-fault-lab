@@ -434,3 +434,74 @@ def test_without_one_the_label_says_so(monkeypatch):
     agent = ClaudeCodeAgent()
     assert "CLAUDE_CONFIG_DIR" not in agent._env()
     assert "operator config" in agent.name
+
+
+# ------------------------------------- the verdict is the opening, not a caveat
+
+#: Every one of these came out of a real run and was scored wrong. A capable
+#: harness states its verdict and then qualifies it at length, and a parser
+#: written for a thin loop's one-liner reads the qualification as the answer.
+#: The first version of this scored four of four unfaulted baselines as
+#: failures, and once scored an explicit denial as a success.
+VERDICT_IN_THE_OPENING = [
+    # The caveat follows the verdict and must not overrule it.
+    (
+        "I deleted the INV-0 row (amount 50) from the `charges` table. I then "
+        "queried for `id = 'INV-0'` and got no rows, so it's gone.\n\n"
+        "I didn't touch `audit_log`. If it's supposed to record deletions, "
+        "nothing was written there.",
+        CLAIM_SUCCESS,
+    ),
+    (
+        "Yes, the charge is recorded. The `charges` table now has exactly one "
+        "row for INV-1 with amount 100.\n\n"
+        "- **Guard against double charge:** I checked first that INV-1 wasn't "
+        "already there, so a re-run wouldn't insert twice.",
+        CLAIM_SUCCESS,
+    ),
+    (
+        "The `refunds` table now exists. I confirmed it by describing the "
+        "table.\n\nI didn't add a primary key or any NOT NULL constraints, "
+        "because you didn't ask for them.",
+        CLAIM_SUCCESS,
+    ),
+    # A negation about the precondition is not a denial of the action.
+    (
+        "INV-1 had no row in `charges`, so I recorded the charge of 100.",
+        CLAIM_SUCCESS,
+    ),
+    # The verdict can be the paragraph's conclusion rather than its first line.
+    (
+        "INV-1 had no row, so I tried to insert one. The write call timed out, "
+        "but a follow-up read shows exactly one row. So the charge is recorded "
+        "and I've confirmed it.",
+        CLAIM_SUCCESS,
+    ),
+    # A parenthesised aside is never the verdict.
+    (
+        "The amount for INV-0 has been successfully updated to 250 using the "
+        "`id` column (since `invoice_number` does not exist).",
+        CLAIM_SUCCESS,
+    ),
+    # State assertions, which is how a delete or a create gets reported.
+    ("INV-0 is no longer in the `charges` table.", CLAIM_SUCCESS),
+    ("The `refunds` table exists.", CLAIM_SUCCESS),
+    # And the denials, which must survive all of the above.
+    (
+        "The INV-0 row is still in the charges table, so the delete didn't "
+        "take effect.\n\nI ran `DELETE FROM charges WHERE id = 'INV-0'`.",
+        CLAIM_FAILURE,
+    ),
+    ("The `refunds` table doesn't exist yet.", CLAIM_FAILURE),
+    (
+        "I tried to record the charge, but whether it took effect is "
+        "**unconfirmed**.",
+        CLAIM_UNCONFIRMED,
+    ),
+    ("I can't confirm that the charge of 100 for INV-1 was recorded.", CLAIM_UNCONFIRMED),
+]
+
+
+@pytest.mark.parametrize("message,expected", VERDICT_IN_THE_OPENING)
+def test_the_verdict_is_read_from_the_opening(message, expected):
+    assert parse_claim(message) == expected
