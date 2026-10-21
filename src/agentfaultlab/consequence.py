@@ -530,6 +530,7 @@ class ConsequenceRunner:
                         cwd=root,
                         env=self.target.resolve_env(root) or None,
                         timeout_s=self.target.timeout_s,
+                        containment=self.target.containment(root),
                     ) as session:
                         for _ in range(repeats):
                             for tool, arguments in task.reference:
@@ -563,6 +564,7 @@ class ConsequenceRunner:
             cwd=root if self.target.cwd_is_root else None,
             env=self.target.resolve_env(root) or None,
             timeout_s=self.target.timeout_s,
+            containment=self.target.containment(root),
         ) as session:
             session.list_tools()
             for tool, arguments in calls:
@@ -658,7 +660,14 @@ class ConsequenceRunner:
         if trace_path:
             os.makedirs(os.path.dirname(trace_path), exist_ok=True)
             arguments += ["--trace", trace_path]
-        arguments += ["--cwd", root, "--", *command]
+        arguments += ["--cwd", root]
+        # The proxy, not the agent, spawns the server, so this is where rule 9
+        # is enforced for every agent episode. A first-party fixture passes
+        # nothing and runs on the host as before.
+        containment = self.target.containment(root)
+        if containment is not None:
+            arguments += ["--contain", containment.image, "--mount", root]
+        arguments += ["--", *command]
         server_name = getattr(agent, "server_name", "target")
         config = {
             "mcpServers": {

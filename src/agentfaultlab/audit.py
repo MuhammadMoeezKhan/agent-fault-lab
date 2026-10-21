@@ -123,6 +123,23 @@ class ServerTarget:
     #: This is separate from the audit's `settle_s`, which exists for F3's
     #: deliberately late call.
     quiesce_s: float = 0.0
+    #: Whether this server runs inside a container (rule 9). The default is
+    #: True so that a spec which forgets to say is contained rather than
+    #: trusted: a new third-party server is the dangerous case, and omission
+    #: should fail towards safety. Only first-party fixtures the engine itself
+    #: ships (tests/fake_server.py) set this to False, and they say why.
+    contained: bool = True
+    #: Image tag used when `contained`. Recorded in the report, because a
+    #: result is only reproducible against a named image.
+    image: str = "agent-fault-lab:audit"
+
+    def containment(self, root: str) -> Optional[Any]:
+        """The containment for one trial, or None for a first-party fixture."""
+        if not self.contained:
+            return None
+        from .container import Containment
+
+        return Containment(image=self.image, mount=root)
 
     def resolve_command(self, root: str) -> list[str]:
         return [self._fill(part, root) for part in self.command]
@@ -295,6 +312,7 @@ class Audit:
             env=self.target.resolve_env(root) or None,
             trace=self.trace,
             timeout_s=self.target.timeout_s,
+            containment=self.target.containment(root),
         )
 
     def list_tools(self) -> list[Tool]:

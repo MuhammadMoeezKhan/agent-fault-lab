@@ -45,6 +45,18 @@ def _add_proxy(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--keep", type=int, default=1, help="F5 batch prefix length")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cwd", help="working directory for the server")
+    parser.add_argument(
+        "--contain",
+        metavar="IMAGE",
+        help=(
+            "run the server inside this container image instead of on the "
+            "host (rule 9: third-party servers are untrusted code)"
+        ),
+    )
+    parser.add_argument(
+        "--mount",
+        help="host directory to mount as the container's workdir (default: --cwd)",
+    )
 
 
 def _add_check(subparsers: argparse._SubParsersAction) -> None:
@@ -396,6 +408,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             keep=args.keep,
             seed=args.seed,
             cwd=args.cwd,
+            contain=args.contain,
+            mount=args.mount,
         )
     if command == "check":
         return _run_check(args)

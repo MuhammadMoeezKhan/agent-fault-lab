@@ -46,10 +46,15 @@ class StdioFaultProxy:
         cwd: Optional[str] = None,
         env: Optional[dict[str, str]] = None,
         trace: Optional[TraceWriter] = None,
+        containment: Optional[Any] = None,
     ) -> None:
         if not command:
             raise ValueError("a server command is required")
         self.command = command
+        #: Set when the server is third-party (rule 9). The proxy is the one
+        #: place the agent path spawns a server, so containing it here covers
+        #: every agent episode without the agent needing to know.
+        self.containment = containment
         self.injector = FaultInjector(plan)
         self.cwd = cwd
         self.env = env
@@ -70,12 +75,18 @@ class StdioFaultProxy:
         environment = dict(os.environ)
         if self.env:
             environment.update(self.env)
+        argv = self.command
+        cwd = self.cwd
+        if self.containment is not None:
+            argv = self.containment.run_argv(self.command, self.env or {})
+            cwd = None
+            environment = dict(os.environ)
         self._proc = subprocess.Popen(
-            self.command,
+            argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=None,  # the server's stderr goes straight to ours
-            cwd=self.cwd,
+            cwd=cwd,
             env=environment,
             bufsize=0,
         )
@@ -252,6 +263,8 @@ def run_proxy(
     keep: int = 1,
     seed: int = 0,
     cwd: Optional[str] = None,
+    contain: Optional[str] = None,
+    mount: Optional[str] = None,
 ) -> int:
     """Entry point for `agent-fault-lab proxy`. Relays this process's stdio."""
     import sys
@@ -264,7 +277,15 @@ def run_proxy(
         if trace_path
         else None
     )
-    proxy = StdioFaultProxy(command, plan=plan, trace=trace, cwd=cwd)
+    containment = None
+    if contain:
+        from ..container import Containment, require
+
+        require()
+        containment = Containment(image=contain, mount=mount or cwd or os.getcwd())
+    proxy = StdioFaultProxy(
+        command, plan=plan, trace=trace, cwd=cwd, containment=containment
+    )
     try:
         return proxy.run(sys.stdin.buffer, sys.stdout.buffer)
     finally:

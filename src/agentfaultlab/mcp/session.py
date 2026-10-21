@@ -111,10 +111,15 @@ class ServerSession:
         env: Optional[dict[str, str]] = None,
         trace: Optional["TraceWriter"] = None,
         timeout_s: float = 20.0,
+        containment: Optional[Any] = None,
     ) -> None:
         if not command:
             raise ValueError("a server command is required")
         self.command = command
+        #: When set, the server runs inside a container instead of on the host
+        #: (rule 9). The stdio contract is identical either way, so nothing
+        #: below this line needs to know which it is talking to.
+        self.containment = containment
         self.injector = FaultInjector(plan)
         self.cwd = cwd
         self.env = env
@@ -145,18 +150,27 @@ class ServerSession:
         environment = dict(os.environ)
         if self.env:
             environment.update(self.env)
+        argv = self.command
+        cwd = self.cwd
+        if self.containment is not None:
+            # The container carries its own workdir and its own environment,
+            # and the host environment is deliberately not inherited: that is
+            # the whole point of the boundary.
+            argv = self.containment.run_argv(self.command, self.env or {})
+            cwd = None
+            environment = dict(os.environ)
         try:
             self._proc = subprocess.Popen(
-                self.command,
+                argv,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=self.cwd,
+                cwd=cwd,
                 env=environment,
                 bufsize=0,
             )
         except (OSError, ValueError) as exc:
-            raise SessionError(f"could not start {self.command[0]!r}: {exc}") from exc
+            raise SessionError(f"could not start {argv[0]!r}: {exc}") from exc
         assert self._proc.stdin is not None and self._proc.stdout is not None
         self._writer = jsonrpc.MessageWriter(self._proc.stdin)
         self._spawn(self._read_stdout, "stdout")

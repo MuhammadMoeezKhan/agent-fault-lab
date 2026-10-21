@@ -158,7 +158,7 @@ def test_unknown_prompt_arm_is_rejected():
     runner = ConsequenceRunner(
         ServerTarget(
             name="fake",
-            command=[sys.executable, FAKE_SERVER],
+            command=[sys.executable, FAKE_SERVER], contained=False,
             observer=lambda root: FilesystemObserver(root),
         )
     )
@@ -237,7 +237,7 @@ def test_oracle_builds_the_three_reference_states(tmp_path):
 
     target = ServerTarget(
         name="fake",
-        command=[sys.executable, FAKE_SERVER],
+        command=[sys.executable, FAKE_SERVER], contained=False,
         observer=lambda root: FilesystemObserver(root, ignore=(".keys.json",)),
         timeout_s=10.0,
     )
@@ -268,7 +268,7 @@ def test_mcp_config_points_at_a_runnable_proxy_and_the_right_server(tmp_path):
 
     target = ServerTarget(
         name="fake",
-        command=[sys.executable, FAKE_SERVER, "{root}"],
+        command=[sys.executable, FAKE_SERVER, "{root}"], contained=False,
         observer=lambda root: FilesystemObserver(root),
         env={"SEED_DIR": "{root}"},
     )
@@ -303,7 +303,7 @@ def test_mcp_config_omits_the_fault_for_a_clean_episode(tmp_path):
     runner = ConsequenceRunner(
         ServerTarget(
             name="fake",
-            command=[sys.executable, FAKE_SERVER],
+            command=[sys.executable, FAKE_SERVER], contained=False,
             observer=lambda root: FilesystemObserver(root),
         )
     )
@@ -376,7 +376,7 @@ def test_an_episode_runs_the_spec_prelude_before_the_agent(tmp_path):
 
     target = ServerTarget(
         name="fake",
-        command=[sys.executable, FAKE_SERVER],
+        command=[sys.executable, FAKE_SERVER], contained=False,
         observer=lambda root: FilesystemObserver(root),
         prelude=[("append_line", {"path": "{root}/prelude.txt", "line": "ready"})],
     )

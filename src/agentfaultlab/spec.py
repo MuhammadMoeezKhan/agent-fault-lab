@@ -191,6 +191,31 @@ def _cwd_is_root(server: dict[str, Any]) -> bool:
     )
 
 
+def _contained(server: dict[str, Any]) -> bool:
+    """A spec file cannot opt a third-party server out of its container.
+
+    Rule 9 is not a default to be overridden by the thing being audited. The
+    two incidents that produced the rule, a skill file written into the real
+    `~/.claude` and four auto-commits into the engine repository, both came
+    from a server doing something on startup that no spec predicted, so the
+    spec is exactly the wrong place to trust. The only uncontained servers are
+    first-party fixtures constructed in code (tests/fake_server.py), which
+    pass `contained=False` to ServerTarget directly and never go through a
+    spec file.
+    """
+    if "contained" not in server:
+        return True
+    if server.get("contained"):
+        return True
+    raise SpecError(
+        "contained: false is not allowed in a spec. Rule 9 runs every "
+        "third-party server inside a container, and a server that misbehaves "
+        "on startup is precisely the case the container exists for. If this "
+        "is first-party code, build the ServerTarget in Python and pass "
+        "contained=False there, with a comment saying why it is first-party."
+    )
+
+
 def _prelude(raw: Any) -> tuple[tuple[str, dict[str, Any]], ...]:
     """Parse `prelude`: calls every trial makes before the fixture.
 
@@ -245,6 +270,8 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
         env={**GIT_ENV, **(server.get("env") or {})},
         prelude=_prelude(server.get("prelude")),
         cwd_is_root=_cwd_is_root(server),
+        contained=_contained(server),
+        image=str(server.get("image", "agent-fault-lab:audit")),
         version=str(server.get("version", "")),
         timeout_s=float(server.get("timeout_s", 20.0)),
         quiesce_s=float(server.get("quiesce_s", 0.0)),

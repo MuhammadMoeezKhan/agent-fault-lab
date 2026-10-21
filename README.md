@@ -177,6 +177,29 @@ A spec is one JSON file per server, so it is also the unit of contribution: send
 
 `probes` are read-only calls used to decide something separate from duplication: whether a caller who never got an answer could have found out what happened. If no probe's output differs between the untouched backend and the backend after one application, the tool is unconfirmable through that server, and the agent on the other end has nothing to check against.
 
+## Servers under audit run in a container
+
+A server under audit is third-party code that the harness starts, hands a directory to, and lets run. Two servers in the pilot showed what that means in practice, both during startup, neither after any tool call:
+
+- one wrote a skill file into the operator's real `~/.claude/skills/` during a `tools/list` probe, which every later session on that machine then loaded,
+- one initialised itself in whatever directory it was given, which was this repository, and auto-committed four commits onto the checked-out branch.
+
+Pointing `HOME` at a throwaway directory does not prevent either, because a process that wants the real home can read the environment, walk the filesystem, or just run `git` where it stands. So the boundary is a container:
+
+```
+agent-fault-lab proxy --contain agent-fault-lab:audit --mount "$ROOT" -- npx -y some-server
+```
+
+The container gets no host home, no credentials and no SSH keys. The only host path mounted is the one trial directory the observer is about to read, at `/work`. `HOME` is a tmpfs that dies with the container. The run has `--network=none`, so a server cannot reach the registry or anything else mid-trial: packages are installed once at image build time, which is the only step with network. The root filesystem is read-only, every capability is dropped, and memory and process counts are capped.
+
+Verified against the running daemon, with `mcp-server-sqlite-npx` inside the container: `/Users` does not exist, `$HOME` is empty, DNS does not resolve, `/etc` is unwritable, the process runs as uid 10001 with `CapEff: 0000000000000000`, and the `initialize` / `tools/list` / `tools/call` handshake completes over `docker run -i` with the insert readable on the host afterwards.
+
+Absolute host paths inside a server command are rewritten to their in-container location, so a SQLite server pointed at `/var/folders/.../afl-abc/app.db` is handed `/work/app.db` and the observer still reads the file the server wrote. Getting this wrong would be quiet rather than loud: the server would create a fresh empty database somewhere the observer never looks, and every fixture would score SAFE for the wrong reason.
+
+Containment is on by default and a spec file cannot turn it off. A server that misbehaves on startup is exactly the case the container exists for, so the audited thing does not get a vote. The only uncontained servers are first-party fixtures built in Python (`tests/fake_server.py`), which pass `contained=False` to `ServerTarget` directly.
+
+The image build installs from the public registry with network access, so a malicious package could still compromise its own image. That is the same trust involved in auditing published packages at all, and it is recorded in the paper's threats to validity rather than solved here.
+
 ## What the agent does about it
 
 The audit measures tools. This measures the agent on the other end of one, which is the part a tool author cannot fix for you.

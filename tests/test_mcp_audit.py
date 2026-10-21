@@ -39,6 +39,10 @@ def make_target(**overrides) -> ServerTarget:
         command=[sys.executable, FAKE_SERVER],
         observer=lambda root: FilesystemObserver(root, ignore=(".keys.json", ".DS_Store")),
         timeout_s=10.0,
+        # fake_server.py is this repository's own code, run by this
+        # interpreter, so rule 9 does not apply and the tests stay fast and
+        # runnable without a daemon. Every third-party spec is contained.
+        contained=False,
     )
     defaults.update(overrides)
     return ServerTarget(**defaults)
