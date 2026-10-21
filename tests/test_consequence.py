@@ -403,3 +403,34 @@ def test_an_episode_runs_the_spec_prelude_before_the_agent(tmp_path):
     # The prelude's own file is part of every baseline, so it does not show up
     # as an effect of the task.
     assert result.multiplicity in ("none", "once", "other")
+
+
+# ------------------------------------------------- the hosted arm's config dir
+
+def test_the_hosted_arm_can_run_under_a_clean_config_dir(monkeypatch, tmp_path):
+    """The operator's own CLAUDE.md, skills and hooks must stay out.
+
+    `--strict-mcp-config` isolates MCP configuration only, and the flag that
+    would have covered the rest stops MCP tools reaching the session at all,
+    so the isolation has to come from the config directory instead.
+    """
+    from agentfaultlab.consequence import ClaudeCodeAgent
+
+    monkeypatch.setattr(
+        "agentfaultlab.consequence._claude_version", lambda _binary: "0.0.0"
+    )
+    agent = ClaudeCodeAgent(config_dir=str(tmp_path))
+    assert agent._env()["CLAUDE_CONFIG_DIR"] == str(tmp_path)
+    assert "clean config" in agent.name
+
+
+def test_without_one_the_label_says_so(monkeypatch):
+    """Two runs under different configs must not pool as the same agent."""
+    from agentfaultlab.consequence import ClaudeCodeAgent
+
+    monkeypatch.setattr(
+        "agentfaultlab.consequence._claude_version", lambda _binary: "0.0.0"
+    )
+    agent = ClaudeCodeAgent()
+    assert "CLAUDE_CONFIG_DIR" not in agent._env()
+    assert "operator config" in agent.name

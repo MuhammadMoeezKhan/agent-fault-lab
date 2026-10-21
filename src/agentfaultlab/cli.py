@@ -106,6 +106,14 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         help="ollama[:model], or claude[:model]",
     )
     parser.add_argument(
+        "--config-dir",
+        help=(
+            "config directory for the hosted-agent arm, holding only a login. "
+            "Keeps the operator's own CLAUDE.md, skills, plugins and hooks out "
+            "of the measured session, which --strict-mcp-config does not do"
+        ),
+    )
+    parser.add_argument(
         "--agent-timeout",
         type=float,
         default=300.0,
@@ -235,7 +243,11 @@ def _run_check(args: argparse.Namespace) -> int:
     return 0 if args.exit_zero else report.exit_code(verdicts)
 
 
-def _build_agent(descriptor: str, timeout_s: float = 300.0):
+def _build_agent(
+    descriptor: str,
+    timeout_s: float = 300.0,
+    config_dir: Optional[str] = None,
+):
     """`ollama`, `ollama:qwen3:8b`, `claude`, or `claude:sonnet`."""
     kind, _, model = descriptor.partition(":")
     kind = kind.strip().lower()
@@ -251,7 +263,7 @@ def _build_agent(descriptor: str, timeout_s: float = 300.0):
     if kind in ("claude", "claude-code"):
         from .consequence import ClaudeCodeAgent
 
-        return ClaudeCodeAgent(model=model or "sonnet")
+        return ClaudeCodeAgent(model=model or "sonnet", config_dir=config_dir)
     raise SystemExit(f"unknown agent {descriptor!r}; use ollama[:model] or claude[:model]")
 
 
@@ -278,7 +290,9 @@ def _run_consequence(args: argparse.Namespace) -> int:
             taxonomy.get(condition)
 
     planned = len(tasks) * len(conditions) * len(arms) * args.repeats
-    agent = _build_agent(args.agent, timeout_s=args.agent_timeout)
+    agent = _build_agent(
+        args.agent, timeout_s=args.agent_timeout, config_dir=args.config_dir
+    )
     # Only the subscription arm draws on a rate limit that is shared with his
     # own interactive work, so only that arm is metered.
     meters = args.agent.split(":")[0].lower() in ("claude", "claude-code")

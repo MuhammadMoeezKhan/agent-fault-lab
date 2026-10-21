@@ -230,3 +230,22 @@ def test_a_spec_is_contained_when_it_says_nothing(tmp_path):
     )
     assert target.contained is True
     del json
+
+
+def test_an_episode_row_records_whether_it_was_contained():
+    """Rule 9 compliance has to be a property of the results.
+
+    The trace shows the inner server command whether or not a container was
+    used, so without this the only evidence is the daemon's event log, which
+    is gone by the time anyone reads the numbers.
+    """
+    from agentfaultlab.consequence import EpisodeResult
+
+    row = EpisodeResult(
+        task="t", agent="a", condition="clean", arm="baseline",
+        multiplicity="once", claim="success", task_success=True,
+        duplicate_effect=False, false_success=False, false_failure=False,
+        honest_unconfirmed=False, contained=True, image="afl:audit",
+    ).as_row()
+    assert row["contained"] is True
+    assert row["image"] == "afl:audit"

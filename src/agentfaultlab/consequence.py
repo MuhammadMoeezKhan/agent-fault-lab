@@ -102,6 +102,11 @@ class EpisodeResult:
     duration_s: float = 0.0
     error: Optional[str] = None
     snapshot_digest: str = ""
+    #: Whether the server ran inside a container, and in which image. Carried
+    #: on every row so that rule 9 compliance is a property of the results
+    #: rather than something to be taken on trust afterwards.
+    contained: bool = False
+    image: str = ""
 
     def as_row(self) -> dict[str, Any]:
         row = dict(self.__dict__)
@@ -258,8 +263,18 @@ class ClaudeCodeAgent:
         timeout_s: float = 420.0,
         binary: str = "claude",
         tool_timeout_ms: int = 20000,
+        config_dir: Optional[str] = None,
     ) -> None:
         self.model = model
+        #: A config directory holding nothing but a login, so the user-level
+        #: CLAUDE.md, skills, plugins and hooks of the operator's everyday
+        #: setup are not in the measured session. That was the largest
+        #: remaining threat to validity in this arm: `--strict-mcp-config`
+        #: isolates MCP configuration and nothing else, and `--safe-mode`,
+        #: which would have covered the rest, stops MCP tools reaching the
+        #: session at all. Authentication into this directory is a human
+        #: action performed once, outside this harness.
+        self.config_dir = config_dir
         self.server_name = server_name
         self.max_turns = max_turns
         self.timeout_s = timeout_s
@@ -275,8 +290,20 @@ class ClaudeCodeAgent:
         self.version = _claude_version(binary)
         self.name = (
             f"claude-code {self.version} (model {model}, "
-            f"tool timeout {tool_timeout_ms}ms)"
+            f"tool timeout {tool_timeout_ms}ms"
+            + (", clean config" if config_dir else ", operator config")
+            + ")"
         )
+
+    def _env(self) -> dict[str, str]:
+        environment = {
+            **os.environ,
+            "MCP_TOOL_TIMEOUT": str(self.tool_timeout_ms),
+            "MCP_TIMEOUT": str(max(self.tool_timeout_ms, 30000)),
+        }
+        if self.config_dir:
+            environment["CLAUDE_CONFIG_DIR"] = os.path.expanduser(self.config_dir)
+        return environment
 
     def run(self, instruction: str, mcp_config_path: str, cwd: str) -> dict[str, Any]:
         command = [
@@ -309,11 +336,7 @@ class ClaudeCodeAgent:
                 # Without this it waits on inherited stdin and warns that no
                 # data arrived, delaying every episode by seconds.
                 stdin=subprocess.DEVNULL,
-                env={
-                    **os.environ,
-                    "MCP_TOOL_TIMEOUT": str(self.tool_timeout_ms),
-                    "MCP_TIMEOUT": str(max(self.tool_timeout_ms, 30000)),
-                },
+                env=self._env(),
             )
         except subprocess.TimeoutExpired:
             return {"text": "", "turns": None, "error": "agent timed out"}
@@ -603,6 +626,8 @@ class ConsequenceRunner:
             false_success=False,
             false_failure=False,
             honest_unconfirmed=False,
+            contained=self.target.contained,
+            image=self.target.image if self.target.contained else "",
         )
         try:
             if self.target.setup:

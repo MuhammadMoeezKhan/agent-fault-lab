@@ -272,8 +272,21 @@ def run_proxy(
     plan = (
         FaultPlan.parse(fault, delay_s=delay_s, keep=keep, seed=seed) if fault else None
     )
+    # The context records whether the server ran contained, because rule 9
+    # compliance has to be checkable from a run's own artifacts. Without it
+    # the trace shows the inner server command either way and the only
+    # evidence is the daemon's event log, which is gone by the time anyone
+    # reads the results.
     trace = (
-        TraceWriter(trace_path, context={"server": command, "fault": fault})
+        TraceWriter(
+            trace_path,
+            context={
+                "server": command,
+                "fault": fault,
+                "contained": bool(contain),
+                "image": contain or None,
+            },
+        )
         if trace_path
         else None
     )
