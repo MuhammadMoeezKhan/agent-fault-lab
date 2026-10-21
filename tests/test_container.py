@@ -249,3 +249,76 @@ def test_an_episode_row_records_whether_it_was_contained():
     ).as_row()
     assert row["contained"] is True
     assert row["image"] == "afl:audit"
+
+
+# ------------------------------------------- the in-container launch command
+
+def test_npx_is_dropped_inside_the_container():
+    """npx re-resolves against the registry, which no-network forbids.
+
+    The failure without this is `EAI_AGAIN getaddrinfo`, which looks like a
+    broken server rather than a launch command that should never have been
+    used inside the image.
+    """
+    from agentfaultlab.container import installed_argv
+
+    assert installed_argv(["npx", "-y", "memorix", "serve"]) == ["memorix", "serve"]
+    assert installed_argv(
+        ["npx", "-y", "mcp-server-sqlite-npx", "/work/app.db"]
+    ) == ["mcp-server-sqlite-npx", "/work/app.db"]
+
+
+def test_a_scoped_package_maps_to_its_last_segment():
+    from agentfaultlab.container import installed_argv
+
+    assert installed_argv(["npx", "-y", "@cyanheads/git-mcp-server"]) == [
+        "git-mcp-server"
+    ]
+
+
+def test_a_non_npx_command_is_left_alone():
+    from agentfaultlab.container import installed_argv
+
+    assert installed_argv(["uvx", "mcp-server-git"]) == ["uvx", "mcp-server-git"]
+
+
+def test_a_spec_can_override_the_derived_binary():
+    """npm lets a package name any binary, so the convention needs an escape.
+
+    @cyanheads/git-mcp-server is the live case: its published bin takes no
+    arguments, while the registry's own launch line passes npm script
+    arguments that only mean something to npx.
+    """
+    from agentfaultlab.spec import from_document
+
+    target, _ = from_document(
+        {
+            "server": {
+                "name": "x",
+                "command": ["npx", "-y", "@cyanheads/git-mcp-server", "run", "start:stdio"],
+                "container_command": ["git-mcp-server"],
+                "observer": {"kind": "filesystem"},
+            },
+            "fixtures": [
+                {"id": "f", "tool": "t", "arguments": {}}
+            ],
+        }
+    )
+    assert target.launch_command("/r") == ["git-mcp-server"]
+    assert target.resolve_command("/r")[0] == "npx"
+
+
+def test_the_image_recipe_is_a_file_the_module_reads():
+    """One copy, so a rebuilt image cannot differ from what the repo shows.
+
+    The embedded string this replaced was corrupted by Python's own rules: a
+    backslash before a newline is a line continuation inside a triple-quoted
+    string, so every shell line continuation in the recipe was eaten.
+    """
+    from agentfaultlab.container import dockerfile
+
+    recipe = dockerfile()
+    assert recipe.startswith("FROM ")
+    assert "--network" not in recipe, "the build installs; the run has no network"
+    assert "USER afl" in recipe
+    assert recipe.count("npm install -g") == 1

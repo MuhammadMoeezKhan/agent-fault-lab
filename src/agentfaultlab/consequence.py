@@ -549,7 +549,7 @@ class ConsequenceRunner:
                 observer = self.target.observer(root)
                 if repeats:
                     with ServerSession(
-                        self.target.resolve_command(root),
+                        self.target.launch_command(root),
                         cwd=root,
                         env=self.target.resolve_env(root) or None,
                         timeout_s=self.target.timeout_s,
@@ -583,7 +583,7 @@ class ConsequenceRunner:
         if not calls:
             return
         with ServerSession(
-            self.target.resolve_command(root),
+            self.target.launch_command(root),
             cwd=root if self.target.cwd_is_root else None,
             env=self.target.resolve_env(root) or None,
             timeout_s=self.target.timeout_s,
@@ -678,7 +678,7 @@ class ConsequenceRunner:
         agent: Agent,
     ) -> None:
         """An MCP config that points the agent at the server via the proxy."""
-        command = list(self.target.resolve_command(root))
+        command = list(self.target.launch_command(root))
         arguments = [*self.proxy_command[1:], "proxy"]
         if fault:
             arguments += ["--fault", fault]

@@ -1,7 +1,13 @@
 {
   "server": {
     "name": "community-cyanheads-git",
-    "command": ["npx", "-y", "@cyanheads/git-mcp-server", "run", "start:stdio"],
+    "command": [
+      "npx",
+      "-y",
+      "@cyanheads/git-mcp-server",
+      "run",
+      "start:stdio"
+    ],
     "version": "@cyanheads/git-mcp-server 2.15.x (npx latest at run time)",
     "note": "A community git server with 28 tools, deliberately audited with the same fixtures as the reference git server: same backend semantics, two implementations. It declares readOnlyHint on all 28 tools and idempotentHint on none. The registry entry describes a bun run script (bun run start:stdio); those arguments are passed through here because that is what the registry says, and the published bin ignores them.",
     "env": {
@@ -15,7 +21,9 @@
       "path": "repo"
     },
     "setup": {
-      "directories": ["home"],
+      "directories": [
+        "home"
+      ],
       "files": {
         "repo/README.md": "audit fixture repository\n"
       },
@@ -30,7 +38,11 @@
         }
       }
     },
-    "timeout_s": 120.0
+    "timeout_s": 120.0,
+    "container_command": [
+      "git-mcp-server"
+    ],
+    "note_container": "the published bin is git-mcp-server and takes no arguments: 'run start:stdio' are npm script arguments that only apply to npx"
   },
   "fixtures": [
     {
@@ -41,7 +53,13 @@
         "message": "record charge for INV-1"
       },
       "probes": [
-        ["git_log", {"path": "{root}/repo", "maxCount": 10}]
+        [
+          "git_log",
+          {
+            "path": "{root}/repo",
+            "maxCount": 10
+          }
+        ]
       ],
       "note": "the same fixture as the reference git server's commit_staged, so the two implementations can be compared directly"
     },
@@ -50,10 +68,18 @@
       "tool": "git_add",
       "arguments": {
         "path": "{root}/repo",
-        "paths": ["extra.txt"]
+        "paths": [
+          "extra.txt"
+        ]
       },
       "probes": [
-        ["git_status", {"path": "{root}/repo", "includeUntracked": true}]
+        [
+          "git_status",
+          {
+            "path": "{root}/repo",
+            "includeUntracked": true
+          }
+        ]
       ],
       "note": "stages an untracked file, and takes a list, so F5 applies"
     },
@@ -66,7 +92,13 @@
         "branchName": "release"
       },
       "probes": [
-        ["git_branch", {"path": "{root}/repo", "mode": "list"}]
+        [
+          "git_branch",
+          {
+            "path": "{root}/repo",
+            "mode": "list"
+          }
+        ]
       ],
       "note": "one tool with a mode argument covering create, delete and rename: a repeat should find the branch already there"
     }

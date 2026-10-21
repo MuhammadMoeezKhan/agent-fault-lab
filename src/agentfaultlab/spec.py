@@ -271,6 +271,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
         prelude=_prelude(server.get("prelude")),
         cwd_is_root=_cwd_is_root(server),
         contained=_contained(server),
+        container_command=tuple(server.get("container_command", ()) or ()),
         image=str(server.get("image", "agent-fault-lab:audit")),
         version=str(server.get("version", "")),
         timeout_s=float(server.get("timeout_s", 20.0)),

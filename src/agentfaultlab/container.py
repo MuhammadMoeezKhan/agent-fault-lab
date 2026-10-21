@@ -184,6 +184,33 @@ class Containment:
         return argv
 
 
+def installed_argv(command: Sequence[str]) -> list[str]:
+    """Map a registry launch command to the binary installed in the image.
+
+    A spec's command is how the registry says to start the server, which is
+    almost always `npx -y <package> [args]`. Inside the container that is
+    wrong twice over: the package is already installed, and `npx` re-resolves
+    it against the registry, which fails outright under `--network=none` with
+    `EAI_AGAIN`. So the npx prefix is dropped and the package name is mapped
+    to its installed binary.
+
+    The mapping is the last path segment of the package name, which is right
+    for every server in the frame so far (`@cyanheads/git-mcp-server` becomes
+    `git-mcp-server`). It is a convention, not a guarantee: npm lets a package
+    name any binary it likes, so a spec can override this with
+    `container_command` and must when the convention does not hold.
+    """
+    argv = list(command)
+    if not argv or os.path.basename(argv[0]) not in ("npx", "npx.cmd"):
+        return argv
+    rest = [part for part in argv[1:] if part not in ("-y", "--yes")]
+    if not rest:
+        raise ValueError(f"no package in npx command {argv!r}")
+    package, *arguments = rest
+    binary = package.rsplit("/", 1)[-1]
+    return [binary, *arguments]
+
+
 def _blocked(key: str) -> bool:
     upper = key.upper()
     return any(upper.startswith(prefix) or prefix in upper for prefix in BLOCKED_ENV)
@@ -191,38 +218,18 @@ def _blocked(key: str) -> bool:
 
 # ------------------------------------------------------------------ image build
 
-#: Node and Python in one image, because the registry serves both `npx` and
-#: `uvx` servers and a single image keeps the audit's launch path identical
-#: for both. Pinned to a digest-free but explicit tag: the paper reports the
-#: image tag, and a floating `latest` would make a run unreproducible.
-DOCKERFILE = """\
-FROM node:22-bookworm-slim
+#: The image recipe lives in a file rather than a string in this module.
+#: An embedded copy has to be escaped for Python, and a backslash before a
+#: newline is a line continuation inside a triple-quoted string, so every
+#: shell line continuation in the recipe would be silently eaten and the
+#: image built from something subtly different from what the repository
+#: shows. One file, read at build time, cannot drift from itself.
+DOCKERFILE_PATH = os.path.join(os.path.dirname(__file__), "audit.Dockerfile")
 
-RUN apt-get update \\
- && apt-get install -y --no-install-recommends git ca-certificates python3 \\
-      python3-venv curl \\
- && rm -rf /var/lib/apt/lists/*
 
-# uv provides uvx for the Python servers in the frame.
-RUN curl -fsSL https://astral.sh/uv/0.5.11/install.sh | \\
-      env UV_INSTALL_DIR=/usr/local/bin sh
-
-# A real user, so nothing in the trial directory ends up owned by root and a
-# server that tries to write outside its mount is refused by the kernel rather
-# than by hope.
-RUN useradd --create-home --home-dir /home/afl --uid 10001 afl
-RUN mkdir -p /work && chown afl:afl /work
-
-# The install step is the only one with network. Pre-installing here means the
-# trial itself runs with --network=none and still starts in seconds.
-ENV npm_config_update_notifier=false
-ARG PACKAGES=""
-RUN if [ -n "$PACKAGES" ]; then npm install -g $PACKAGES; fi
-
-USER afl
-ENV HOME=/home/afl
-WORKDIR /work
-"""
+def dockerfile() -> str:
+    with open(DOCKERFILE_PATH, encoding="utf-8") as handle:
+        return handle.read()
 
 
 def build_image(
@@ -239,12 +246,14 @@ def build_image(
     install already cost this project a three-minute timeout per launch.
     """
     require()
-    context = context_dir or os.path.join(os.path.expanduser("~"), ".agent-fault-lab", "image")
+    context = context_dir or os.path.join(
+        os.path.expanduser("~"), ".agent-fault-lab", "image"
+    )
     os.makedirs(context, exist_ok=True)
-    dockerfile = os.path.join(context, "Dockerfile")
-    with open(dockerfile, "w", encoding="utf-8") as handle:
-        handle.write(DOCKERFILE)
-    argv = [DOCKER, "build", "--tag", tag, "--file", dockerfile]
+    recipe = os.path.join(context, "Dockerfile")
+    with open(recipe, "w", encoding="utf-8") as handle:
+        handle.write(dockerfile())
+    argv = [DOCKER, "build", "--tag", tag, "--file", recipe]
     if packages:
         argv.extend(["--build-arg", "PACKAGES=" + " ".join(packages)])
     if quiet:

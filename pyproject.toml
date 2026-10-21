@@ -22,5 +22,10 @@ agent-fault-lab = "agentfaultlab.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The image recipe ships with the package: an install that cannot build the
+# audit image cannot run a third-party server at all.
+[tool.setuptools.package-data]
+agentfaultlab = ["audit.Dockerfile"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

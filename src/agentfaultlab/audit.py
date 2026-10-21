@@ -133,6 +133,24 @@ class ServerTarget:
     #: result is only reproducible against a named image.
     image: str = "agent-fault-lab:audit"
 
+    #: Overrides the derived in-container launch command when a package's
+    #: installed binary is not named after the package.
+    container_command: Sequence[str] = ()
+
+    def resolve_container_command(self, root: str) -> list[str]:
+        """The argv to run inside the container, with {root} substituted."""
+        from .container import installed_argv
+
+        if self.container_command:
+            return [self._fill(part, root) for part in self.container_command]
+        return installed_argv(self.resolve_command(root))
+
+    def launch_command(self, root: str) -> list[str]:
+        """The command to actually launch: in-container when contained."""
+        if self.contained:
+            return self.resolve_container_command(root)
+        return self.resolve_command(root)
+
     def containment(self, root: str) -> Optional[Any]:
         """The containment for one trial, or None for a first-party fixture."""
         if not self.contained:
@@ -251,6 +269,12 @@ class ToolVerdict:
     annotation_violations: list[str] = field(default_factory=list)
     deterministic: bool = True
     notes: list[str] = field(default_factory=list)
+    #: Whether the server ran inside a container, and in which image, so that
+    #: a published row says how it was obtained rather than leaving it to be
+    #: taken on trust. Rows collected before the containment rule carry False
+    #: and are labelled as such wherever they are reported.
+    contained: bool = False
+    image: str = ""
 
     def as_row(self) -> dict[str, Any]:
         return {
@@ -271,6 +295,8 @@ class ToolVerdict:
             "annotation_violations": ";".join(self.annotation_violations),
             "deterministic": self.deterministic,
             "notes": "; ".join(self.notes),
+            "contained": self.contained,
+            "image": self.image,
         }
 
 
@@ -306,7 +332,7 @@ class Audit:
 
     def _session(self, root: str, plan: Optional[Any]) -> ServerSession:
         return ServerSession(
-            self.target.resolve_command(root),
+            self.target.launch_command(root),
             plan=plan,
             cwd=root if self.target.cwd_is_root else None,
             env=self.target.resolve_env(root) or None,
@@ -485,6 +511,8 @@ class Audit:
             # read like findings.
             return [
                 ToolVerdict(
+                    contained=self.target.contained,
+                    image=self.target.image if self.target.contained else "",
                     server=self.target.name,
                     tool=fixture.tool,
                     fixture=fixture.identity,
@@ -580,6 +608,8 @@ class Audit:
                 )
             verdicts.append(
                 ToolVerdict(
+                    contained=self.target.contained,
+                    image=self.target.image if self.target.contained else "",
                     server=self.target.name,
                     tool=fixture.tool,
                     fixture=fixture.identity,
