@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from typing import Any, Optional
@@ -82,8 +83,21 @@ def command_for(row: dict[str, Any], argv: list[str], root: str) -> list[str]:
 
 
 def probe_once(
-    command: list[str], root: str, env_extra: dict[str, str], timeout_s: float
+    command: list[str],
+    root: str,
+    env_extra: dict[str, str],
+    timeout_s: float,
+    image: str | None = None,
 ) -> dict[str, Any]:
+    """Start a candidate and read tools/list. Calls no tool.
+
+    With `image`, the candidate runs inside the container (rule 9). That is
+    the only mode allowed for a server that has not been audited before: the
+    two startup incidents that produced the rule, a skill file written into
+    the host agent's configuration and four auto-commits into this
+    repository, both happened during a probe exactly like this one, with no
+    tool ever called.
+    """
     env = dict(os.environ)
     home = os.path.join(root, "home")
     os.makedirs(home, exist_ok=True)
@@ -91,8 +105,23 @@ def probe_once(
     env.setdefault("npm_config_cache", os.path.expanduser("~/.npm"))
     env.update({key: value.replace("{root}", root) for key, value in env_extra.items()})
     env["NO_COLOR"] = "1"
-    session = ServerSession(command, cwd=root, env=env, timeout_s=timeout_s)
-    record: dict[str, Any] = {"command": command}
+    containment = None
+    if image:
+        from agentfaultlab.container import Containment, installed_argv
+
+        containment = Containment(image=image, mount=root)
+        command = installed_argv(command)
+        # The container carries its own HOME on a tmpfs, and the host npm
+        # cache is meaningless inside it.
+        env = {
+            key: value
+            for key, value in env.items()
+            if key not in ("HOME", "npm_config_cache")
+        }
+    session = ServerSession(
+        command, cwd=root, env=env, timeout_s=timeout_s, containment=containment
+    )
+    record: dict[str, Any] = {"command": command, "contained": bool(image)}
     try:
         with session:
             tools = session.list_tools()
@@ -118,7 +147,36 @@ def probe_once(
     return record
 
 
-def probe(row: dict[str, Any], timeout_s: float, allow_fallback: bool) -> dict[str, Any]:
+def build_probe_image(tag: str, packages: list[str]) -> dict[str, list[str]]:
+    """Install the candidates into the audit image, once, with network.
+
+    A candidate that cannot be installed here cannot be audited at all under
+    rule 9, which is a funnel category of its own rather than a failure to
+    start: @wonderwhy-er/desktop-commander depends on fsevents, a macOS-only
+    native module that node-gyp cannot build on Linux.
+    """
+    from agentfaultlab.container import build_image, require
+
+    require()
+    build_image(tag, packages=packages, quiet=False)
+    installed: list[str] = []
+    failed: list[str] = []
+    for name, sink in (("installed", installed), ("failed", failed)):
+        done = subprocess.run(
+            ["docker", "run", "--rm", "--network=none", tag, "cat", f"/opt/afl/{name}"],
+            capture_output=True,
+            text=True,
+        )
+        sink.extend(line for line in done.stdout.split() if line)
+    return {"installed": installed, "failed": failed}
+
+
+def probe(
+    row: dict[str, Any],
+    timeout_s: float,
+    allow_fallback: bool,
+    image: str | None = None,
+) -> dict[str, Any]:
     package = row["package"]
     env_extra = STATE_ENV.get(package, {})
     result: dict[str, Any] = {
@@ -145,7 +203,7 @@ def probe(row: dict[str, Any], timeout_s: float, allow_fallback: bool) -> dict[s
                 for item in argv
             ]
             attempt = probe_once(
-                command_for(row, argv, root), root, env_extra, timeout_s
+                command_for(row, argv, root), root, env_extra, timeout_s, image
             )
             attempt["argv_source"] = source
             result["attempts"].append(attempt)
@@ -180,6 +238,18 @@ def main() -> int:
     parser.add_argument("--out", help="write the full result as JSON here")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument(
+        "--contain",
+        metavar="IMAGE",
+        help="probe inside this container image (rule 9). Required for any "
+             "server not audited before",
+    )
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="build --contain's image first, installing the candidates' "
+             "packages, and report which could not be installed at all",
+    )
+    parser.add_argument(
         "--no-fallback",
         action="store_true",
         help="try only the registry's own command, so startability is measured "
@@ -188,6 +258,25 @@ def main() -> int:
     args = parser.parse_args()
 
     rows = load_rows(args.frame)
+    if args.build:
+        if not args.contain:
+            print("--build needs --contain IMAGE", file=sys.stderr)
+            return 2
+        wanted = [rows[n]["package"] for n in args.names if n in rows]
+        outcome = build_probe_image(args.contain, wanted)
+        print(f"\nimage {args.contain}")
+        print(f"  installed: {len(outcome['installed'])} {outcome['installed']}")
+        print(f"  cannot install: {len(outcome['failed'])} {outcome['failed']}")
+        uninstallable = set(outcome["failed"])
+    else:
+        uninstallable = set()
+    if not args.contain:
+        print(
+            "refusing to probe on the host: rule 9 requires a container. "
+            "Pass --contain IMAGE (add --build the first time).",
+            file=sys.stderr,
+        )
+        return 2
     results = []
     for name in args.names:
         row = rows.get(name)
@@ -195,7 +284,18 @@ def main() -> int:
             print(f"{name}: not in the frame", file=sys.stderr)
             continue
         print(f"\n=== {name} ({row['package']})", flush=True)
-        result = probe(row, args.timeout, not args.no_fallback)
+        if row["package"] in uninstallable:
+            print("  cannot be installed in the audit image, so not auditable")
+            results.append(
+                {
+                    "server": name,
+                    "package": row["package"],
+                    "started_via": None,
+                    "uninstallable": True,
+                }
+            )
+            continue
+        result = probe(row, args.timeout, not args.no_fallback, args.contain)
         results.append(result)
         if result["started_via"] is None:
             for attempt in result["attempts"]:

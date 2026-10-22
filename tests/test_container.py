@@ -322,3 +322,30 @@ def test_the_image_recipe_is_a_file_the_module_reads():
     assert "--network" not in recipe, "the build installs; the run has no network"
     assert "USER afl" in recipe
     assert recipe.count("npm install -g") == 1
+
+
+def test_the_probe_script_refuses_to_run_on_the_host(capsys):
+    """A probe is how both startup incidents happened, with no tool called.
+
+    So the script that does it must not have a host mode at all, rather than
+    a host mode that is merely not the default.
+    """
+    import importlib.util
+    import os
+
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "scripts", "probe_server.py"
+    )
+    spec = importlib.util.spec_from_file_location("probe_server", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    import sys
+
+    argv = sys.argv
+    try:
+        sys.argv = ["probe_server.py", "/nonexistent-frame.jsonl", "some/server"]
+        assert module.main() == 2
+    finally:
+        sys.argv = argv
+    assert "rule 9" in capsys.readouterr().err
