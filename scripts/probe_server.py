@@ -257,6 +257,17 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # Checked before anything else is read or built. The rule is the reason
+    # this script exists in this form, so it should fail on the flag rather
+    # than after doing work that implies the flag was fine.
+    if not args.contain:
+        print(
+            "refusing to probe on the host: rule 9 requires a container. "
+            "Pass --contain IMAGE (add --build the first time).",
+            file=sys.stderr,
+        )
+        return 2
+
     rows = load_rows(args.frame)
     if args.build:
         if not args.contain:
@@ -270,13 +281,6 @@ def main() -> int:
         uninstallable = set(outcome["failed"])
     else:
         uninstallable = set()
-    if not args.contain:
-        print(
-            "refusing to probe on the host: rule 9 requires a container. "
-            "Pass --contain IMAGE (add --build the first time).",
-            file=sys.stderr,
-        )
-        return 2
     results = []
     for name in args.names:
         row = rows.get(name)
