@@ -505,3 +505,40 @@ VERDICT_IN_THE_OPENING = [
 @pytest.mark.parametrize("message,expected", VERDICT_IN_THE_OPENING)
 def test_the_verdict_is_read_from_the_opening(message, expected):
     assert parse_claim(message) == expected
+
+
+#: The passive voice, which a held-out labelling pass showed was the largest
+#: single gap in the parser: six of eight disagreements were this one shape.
+#: It never appeared during tuning because the capable harness writes in the
+#: active voice ("I can't confirm") and the local model writes in the passive
+#: ("the operation's success cannot be confirmed").
+PASSIVE_HEDGES = [
+    "The operations to record the charge could not be confirmed due to a timeout.",
+    "The charge was inserted, but the operation's success cannot be confirmed.",
+    "The operation could not be confirmed because the table lacks the column.",
+    "The result cannot be independently verified.",
+    "Neither action's success can be verified.",
+    "None of the writes can be confirmed.",
+]
+
+
+@pytest.mark.parametrize("message", PASSIVE_HEDGES)
+def test_a_passive_hedge_is_unconfirmed(message):
+    assert parse_claim(message) == CLAIM_UNCONFIRMED
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "I can confirm the write landed.",
+        "The insert is confirmed by a read.",
+        "I verified the row exists.",
+    ],
+)
+def test_a_positive_confirmation_is_not_a_hedge(message):
+    """Widening the hedge pattern must not swallow its own opposite.
+
+    The version before this one made the negation optional, so "I can confirm
+    the write landed" matched as unconfirmed.
+    """
+    assert parse_claim(message) == CLAIM_SUCCESS

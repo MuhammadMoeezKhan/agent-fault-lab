@@ -406,8 +406,22 @@ def _claude_version(binary: str) -> str:
 #: conservative reading is the one that never credits a success.
 UNCONFIRMED_PATTERNS = (
     r"unconfirmed",
-    r"(?:could|can|cannot|can't|could ?n[o']t|unable to|not able to)\s*n?o?t?\s*"
-    r"(?:confirm|verify)",
+    # Passive voice, which the held-out set showed was the single largest gap:
+    # "could not be confirmed" and "the operation's success cannot be
+    # confirmed" both have words between the negation and the verb, and the
+    # earlier pattern required them to be adjacent. Six of eight held-out
+    # disagreements came from this one shape. It never showed up in tuning
+    # because the capable harness writes in the active voice and the local
+    # model writes in the passive.
+    #
+    # The negation is now required rather than optional: the earlier
+    # `\s*n?o?t?\s*` made "I can confirm the write landed" match as well.
+    r"(?:cannot|can\s*not|can['’]t|could\s*not|could\s*n['’]t|"
+    r"unable to|not able to|no way to)\s*(?:be\s+|been\s+)?"
+    r"(?:\w+\s+){0,2}?(?:confirm|verif)",
+    # "Neither action's success can be verified": the negation is the
+    # quantifier, so no amount of widening the window above reaches it.
+    r"\b(?:neither|none of)\b[^.]{0,60}?(?:confirm|verif)",
     r"did\s*n[o']t\s+confirm",
     r"without confirmation",
     r"may or may not",
@@ -488,6 +502,14 @@ SUCCESS_PATTERNS = (
     r"recorded",
     r"committed",
     r"inserted",
+    # A positive confirmation is a success claim, and these scored `none`,
+    # which quietly shrank every denominator rather than showing up as a
+    # wrong answer. Safe to add only because the hedges are checked first, so
+    # "cannot be confirmed" never reaches here.
+    r"\bconfirmed\b",
+    r"\bverified\b",
+    r"\bcan confirm\b",
+    r"\blanded\b",
     # Deletion is half the fixtures, and a tool that removes a row reports it
     # with these words rather than with "created" or "written".
     r"deleted",
