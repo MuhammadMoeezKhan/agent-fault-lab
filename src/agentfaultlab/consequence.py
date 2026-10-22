@@ -108,9 +108,17 @@ class EpisodeResult:
     contained: bool = False
     image: str = ""
 
+    #: Where the untruncated message was written, so a label and the parser
+    #: can be shown to have read the same input.
+    message_path: str = ""
+
     def as_row(self) -> dict[str, Any]:
         row = dict(self.__dict__)
-        # The agent's prose is kept in the trace, not in the results table.
+        # The table keeps a readable excerpt; `message_path` points at the
+        # whole thing. Truncating without keeping the original cost a round of
+        # parser validation: the parser scored the full message while the hand
+        # labels were made from this 400 character excerpt, so the two never
+        # read the same text and the agreement figure measured nothing.
         row["final_message"] = self.final_message[:400]
         return row
 
@@ -744,7 +752,32 @@ class ConsequenceRunner:
 
         result.claim = parse_claim(result.final_message)
         _score(result)
+        if self.trace_dir and result.final_message:
+            result.message_path = self._write_message(task, condition, arm, result)
         return result
+
+    def _write_message(
+        self, task: AgentTask, condition: str, arm: str, result: EpisodeResult
+    ) -> str:
+        """Persist the whole final message, for labelling and for audit.
+
+        One JSONL file per run, appended to, so a labelling pass reads exactly
+        the bytes the parser read.
+        """
+        path = os.path.join(self.trace_dir, "messages.jsonl")
+        os.makedirs(self.trace_dir, exist_ok=True)
+        record = {
+            "task": task.id,
+            "condition": condition,
+            "arm": arm,
+            "agent": result.agent,
+            "multiplicity": result.multiplicity,
+            "parsed_claim": result.claim,
+            "final_message": result.final_message,
+        }
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+        return path
 
     def _write_mcp_config(
         self,
