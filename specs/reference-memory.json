@@ -1,42 +1,88 @@
 {
   "server": {
     "name": "reference-memory",
-    "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
+    "command": [
+      "npx",
+      "-y",
+      "@modelcontextprotocol/server-memory"
+    ],
     "version": "@modelcontextprotocol/server-memory (npx latest at run time)",
-    "observer": {"kind": "filesystem"},
-    "env": {"MEMORY_FILE_PATH": "{root}/memory.json"},
+    "observer": {
+      "kind": "filesystem"
+    },
+    "env": {
+      "MEMORY_FILE_PATH": "{root}/memory.json"
+    },
     "setup": {
       "files": {
         "memory.json": "{\"type\":\"entity\",\"name\":\"alice\",\"entityType\":\"person\",\"observations\":[\"opened an account\"]}\n"
       }
     },
-    "timeout_s": 60.0
+    "timeout_s": 60.0,
+    "container_command": [
+      "mcp-server-memory"
+    ],
+    "note_container": "the package is @modelcontextprotocol/server-memory but its binary is mcp-server-memory, so the last-segment convention is wrong here"
   },
   "fixtures": [
     {
       "tool": "add_observations",
       "arguments": {
-        "observations": [{"entityName": "alice", "contents": ["paid invoice 100"]}]
+        "observations": [
+          {
+            "entityName": "alice",
+            "contents": [
+              "paid invoice 100"
+            ]
+          }
+        ]
       },
-      "probes": [["read_graph", {}]],
+      "probes": [
+        [
+          "read_graph",
+          {}
+        ]
+      ],
       "note": "an append into an entity's observation list"
     },
     {
       "tool": "create_entities",
       "arguments": {
         "entities": [
-          {"name": "invoice-100", "entityType": "invoice", "observations": ["amount 100"]}
+          {
+            "name": "invoice-100",
+            "entityType": "invoice",
+            "observations": [
+              "amount 100"
+            ]
+          }
         ]
       },
-      "probes": [["read_graph", {}]],
+      "probes": [
+        [
+          "read_graph",
+          {}
+        ]
+      ],
       "note": "declared not idempotent; keyed by name"
     },
     {
       "tool": "create_relations",
       "arguments": {
-        "relations": [{"from": "alice", "to": "alice", "relationType": "knows"}]
+        "relations": [
+          {
+            "from": "alice",
+            "to": "alice",
+            "relationType": "knows"
+          }
+        ]
       },
-      "probes": [["read_graph", {}]],
+      "probes": [
+        [
+          "read_graph",
+          {}
+        ]
+      ],
       "note": "declared not idempotent; a relation triple is its own key"
     }
   ]

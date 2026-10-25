@@ -72,7 +72,11 @@
       ]
     ],
     "quiesce_s": 0.5,
-    "timeout_s": 180.0
+    "timeout_s": 180.0,
+    "container_command": [
+      "contentrain-mcp"
+    ],
+    "note_container": "the package is @contentrain/mcp but its binary is contentrain-mcp, so the last-segment convention gives `mcp` and the container exits at once"
   },
   "fixtures": [
     {

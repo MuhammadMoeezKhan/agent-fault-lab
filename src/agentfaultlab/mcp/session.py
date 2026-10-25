@@ -43,6 +43,23 @@ class CallTimeout(TimeoutError):
     """No answer arrived in time. The caller cannot know if the write landed."""
 
 
+class ServerExited(SessionError):
+    """The server process ended without answering.
+
+    Kept separate from `CallTimeout` because the two have nothing in common
+    but their symptom. A timeout is the interesting case: the call may have
+    landed and the caller cannot tell. A server that exited answered nothing
+    and did nothing, and the reason is usually mundane and visible on its
+    stderr.
+
+    Collapsing them cost an evening. `@contentrain/mcp` installs a binary
+    called `contentrain-mcp`, not `mcp`, so the container exited in two tenths
+    of a second with "executable file not found" and the audit reported
+    "initialize did not answer within 180.0s". A message that names the
+    timeout you did not wait for sends you looking for a slow server.
+    """
+
+
 @dataclass
 class ToolCall:
     """One attempt at a tool call, and what the caller learned from it."""
@@ -134,6 +151,9 @@ class ServerSession:
         self._dropped: dict[Any, Message] = {}
         self._threads: list[threading.Thread] = []
         self.stderr_tail: list[str] = []
+        #: Set when the server's stdout reaches end of file, which means the
+        #: process is gone rather than slow.
+        self._stdout_closed = False
         self.server_info: dict[str, Any] = {}
         self.calls: list[ToolCall] = []
 
@@ -227,6 +247,7 @@ class ServerSession:
                             message["id"], -32601, "client capability not available"
                         )
                     )
+        self._stdout_closed = True
         with self._pending_lock:
             waiting = list(self._pending.values())
             for slot in waiting:
@@ -288,11 +309,23 @@ class ServerSession:
         if response is None:
             with self._pending_lock:
                 self._pending.pop(message["id"], None)
-            raise CallTimeout(f"{method} did not answer within {self.timeout_s}s")
+            raise self._no_answer(method)
         if "error" in response:
             raise SessionError(f"{method} failed: {response['error']}")
         result = response.get("result")
         return result if isinstance(result, dict) else {}
+
+    def _no_answer(self, method: str) -> Exception:
+        """Why there was no answer: the server died, or it is slow."""
+        code = self._proc.poll() if self._proc is not None else None
+        if self._stdout_closed or code is not None:
+            stderr = "; ".join(self.stderr_tail[-5:]) or "nothing on stderr"
+            return ServerExited(
+                f"{method}: the server exited"
+                + (f" with status {code}" if code is not None else "")
+                + f" without answering. Last stderr: {stderr}"
+            )
+        return CallTimeout(f"{method} did not answer within {self.timeout_s}s")
 
     def _notify(self, method: str, params: Optional[dict[str, Any]] = None) -> None:
         message: Message = {"jsonrpc": "2.0", "method": method}

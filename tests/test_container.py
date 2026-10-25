@@ -492,3 +492,21 @@ def test_arguments_are_untouched_without_containment(tmp_path):
     session = ServerSession(["server"], cwd=str(tmp_path))
     arguments = {"path": str(tmp_path / "x"), "n": 1}
     assert session._translate_arguments(dict(arguments)) == arguments
+
+
+def test_the_root_is_the_workdir_by_either_spelling(tmp_path):
+    """macOS temp paths are symlinks, and one spelling was slipping through.
+
+    `/var/folders/...` resolves to `/private/var/folders/...`. The equality
+    check compared the unresolved value to the resolved mount, so a command
+    argument that was exactly the trial root stayed a host path:
+    `@modelcontextprotocol/server-filesystem` was given a directory that does
+    not exist in the container and exited with "none of the specified
+    directories are accessible".
+    """
+    contain = Containment(image="img", mount=str(tmp_path))
+    assert contain.translate(str(tmp_path)) == WORKDIR
+    assert contain.translate(os.path.realpath(str(tmp_path))) == WORKDIR
+    # And with a mount given by its resolved spelling instead.
+    other = Containment(image="img", mount=os.path.realpath(str(tmp_path)))
+    assert other.translate(str(tmp_path)) == WORKDIR

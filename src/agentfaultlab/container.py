@@ -134,10 +134,15 @@ class Containment:
         score SAFE for the wrong reason.
         """
         root = os.path.realpath(self.mount)
-        if value == root:
+        real = os.path.realpath(value) if value.startswith(os.sep) else value
+        # The trial root itself, by either spelling. On macOS the temp root is
+        # a symlink (/var/folders/... is /private/var/folders/...), so the
+        # unresolved spelling never equals the resolved mount and the
+        # filesystem server was handed a host path it could not see: it exited
+        # with "none of the specified directories are accessible".
+        if value == root or real == root:
             return self.workdir
         prefix = root.rstrip(os.sep) + os.sep
-        real = os.path.realpath(value) if value.startswith(os.sep) else value
         if real.startswith(prefix):
             tail = real[len(prefix) :]
             return self.workdir + "/" + tail.replace(os.sep, "/")

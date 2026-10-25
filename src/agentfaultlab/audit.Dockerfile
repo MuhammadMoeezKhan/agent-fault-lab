@@ -44,17 +44,23 @@ RUN set -u; mkdir -p /opt/afl; : > /opt/afl/installed; : > /opt/afl/failed; \
 # off at run time, exactly as `npx` does. `uv tool install` with the bin
 # directory on PATH leaves a plain executable behind, which works whatever
 # HOME is set to at run time.
+# UV_TOOL_DIR matters as much as the bin directory. By default uv keeps the
+# tool's virtualenv under the installing user's home, so the shim on PATH
+# pointed into /root, which the unprivileged user the container runs as
+# cannot read: the server failed to start with the shim sitting right there
+# on PATH. Both halves go somewhere world readable instead.
 ARG PY_PACKAGES=""
 RUN set -u; for pkg in $PY_PACKAGES; do \
       echo "installing $pkg"; \
-      if UV_TOOL_BIN_DIR=/usr/local/bin uv tool install "$pkg" \
-            >/tmp/uv.log 2>&1; then \
+      if UV_TOOL_DIR=/opt/afl/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin \
+            uv tool install "$pkg" >/tmp/uv.log 2>&1; then \
         echo "$pkg" >> /opt/afl/installed; \
       else \
         echo "$pkg" >> /opt/afl/failed; \
         echo "FAILED $pkg:"; tail -5 /tmp/uv.log; \
       fi; \
     done; \
+    chmod -R a+rX /opt/afl/uv-tools 2>/dev/null || true; \
     echo "--- installed ---"; cat /opt/afl/installed; \
     echo "--- failed ---"; cat /opt/afl/failed
 
