@@ -146,6 +146,36 @@ class Containment:
             return self.workdir + "/" + tail.replace(os.sep, "/")
         return value
 
+    def container_home(self, env: Optional[Mapping[str, str]] = None) -> str:
+        """Where HOME points inside the container.
+
+        Normally the throwaway tmpfs at `/home/afl`. But some servers keep
+        their whole state under HOME: `memorix` writes
+        `$HOME/.memorix/data/memorix.db`, and that database is the thing the
+        observer reads. On the host those audits set `HOME` to a directory
+        inside the trial root, which is both throwaway and observable.
+
+        If a caller asks for exactly that, a HOME inside the mounted trial
+        root, it is honoured, translated to its in-container path. The point
+        of rule 9 is that the server cannot reach the operator's home, not
+        that HOME has to be a tmpfs, and a HOME on the tmpfs here would be
+        worse than useless: the server would initialise its store where
+        nothing can read it, the observer would find no database, and every
+        fixture would come back UNPROVEN or, worse, SAFE for the wrong
+        reason.
+
+        Any other HOME is dropped and replaced by the tmpfs, because a path
+        outside the mount either does not exist in the container or is an
+        attempt to reach the host's own home.
+        """
+        asked = (env or {}).get("HOME")
+        if not asked:
+            return self.home
+        inside = self.translate(asked)
+        if inside == self.workdir or inside.startswith(self.workdir + "/"):
+            return inside
+        return self.home
+
     def run_argv(
         self,
         command: Sequence[str],
@@ -154,6 +184,7 @@ class Containment:
         """The full `docker run` argv that replaces a bare server command."""
         if not command:
             raise ValueError("a server command is required")
+        home = self.container_home(env)
         argv = [
             DOCKER,
             "run",
@@ -166,12 +197,15 @@ class Containment:
             "--security-opt=no-new-privileges",
             f"--volume={os.path.realpath(self.mount)}:{self.workdir}",
             f"--workdir={self.workdir}",
-            f"--env=HOME={self.home}",
-            # A tmpfs for each writable path, so the image layer stays clean
-            # and nothing a server writes outlives the trial.
-            f"--tmpfs={self.home}:exec",
+            f"--env=HOME={home}",
             "--tmpfs=/tmp:exec",
         ]
+        # A tmpfs for the throwaway home, so the image layer stays clean and
+        # nothing a server writes outlives the trial. Skipped when HOME is
+        # inside the mounted trial root, where a tmpfs would hide the one
+        # directory the observer is about to read.
+        if not (home == self.workdir or home.startswith(self.workdir + "/")):
+            argv.append(f"--tmpfs={home}:exec")
         if self.read_only:
             argv.append("--read-only")
         for key, value in sorted((env or {}).items()):
@@ -184,28 +218,49 @@ class Containment:
         return argv
 
 
+#: Launchers that fetch a package before running it, and the flags of theirs
+#: that carry no meaning once the package is installed.
+RESOLVERS = {
+    "npx": ("-y", "--yes"),
+    "npx.cmd": ("-y", "--yes"),
+    "uvx": ("--quiet", "-q"),
+}
+
+
 def installed_argv(command: Sequence[str]) -> list[str]:
     """Map a registry launch command to the binary installed in the image.
 
     A spec's command is how the registry says to start the server, which is
-    almost always `npx -y <package> [args]`. Inside the container that is
-    wrong twice over: the package is already installed, and `npx` re-resolves
-    it against the registry, which fails outright under `--network=none` with
-    `EAI_AGAIN`. So the npx prefix is dropped and the package name is mapped
+    almost always `npx -y <package> [args]` or `uvx <package> [args]`. Inside
+    the container that is wrong twice over: the package is already installed,
+    and both launchers re-resolve it against their index, which fails
+    outright under `--network=none` (`EAI_AGAIN` for npx, a resolution error
+    for uv). So the launcher prefix is dropped and the package name is mapped
     to its installed binary.
 
     The mapping is the last path segment of the package name, which is right
     for every server in the frame so far (`@cyanheads/git-mcp-server` becomes
     `git-mcp-server`). It is a convention, not a guarantee: npm lets a package
     name any binary it likes, so a spec can override this with
-    `container_command` and must when the convention does not hold.
+    `container_command` and must when the convention does not hold. `uvx
+    --from <dist> <binary>` names both halves explicitly and is refused here
+    rather than guessed at, for the same reason.
     """
     argv = list(command)
-    if not argv or os.path.basename(argv[0]) not in ("npx", "npx.cmd"):
+    if not argv:
         return argv
-    rest = [part for part in argv[1:] if part not in ("-y", "--yes")]
+    launcher = os.path.basename(argv[0])
+    if launcher not in RESOLVERS:
+        return argv
+    rest = [part for part in argv[1:] if part not in RESOLVERS[launcher]]
     if not rest:
-        raise ValueError(f"no package in npx command {argv!r}")
+        raise ValueError(f"no package in {launcher} command {argv!r}")
+    if rest[0] == "--from":
+        raise ValueError(
+            f"{launcher} --from names a distribution and a binary separately, "
+            f"so it cannot be derived: give the spec a container_command. "
+            f"Command was {argv!r}"
+        )
     package, *arguments = rest
     binary = package.rsplit("/", 1)[-1]
     return [binary, *arguments]
@@ -236,6 +291,7 @@ def build_image(
     tag: str,
     *,
     packages: Sequence[str] = (),
+    py_packages: Sequence[str] = (),
     context_dir: Optional[str] = None,
     quiet: bool = True,
 ) -> str:
@@ -256,6 +312,8 @@ def build_image(
     argv = [DOCKER, "build", "--tag", tag, "--file", recipe]
     if packages:
         argv.extend(["--build-arg", "PACKAGES=" + " ".join(packages)])
+    if py_packages:
+        argv.extend(["--build-arg", "PY_PACKAGES=" + " ".join(py_packages)])
     if quiet:
         argv.append("--quiet")
     argv.append(context)

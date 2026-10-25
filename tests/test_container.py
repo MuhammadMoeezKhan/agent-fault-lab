@@ -16,6 +16,9 @@ from agentfaultlab.container import (
     Containment,
     ContainerError,
     available,
+    build_image,
+    dockerfile,
+    installed_argv,
     require,
 )
 
@@ -141,6 +144,50 @@ def test_a_caller_cannot_override_home(tmp_path):
     argv = make(tmp_path).run_argv(["server"], env={"HOME": os.path.expanduser("~")})
     homes = [a for a in argv if a.startswith("--env=HOME=")]
     assert homes == [f"--env=HOME={HOME}"]
+
+
+def test_a_home_inside_the_trial_root_is_honoured(tmp_path):
+    """memorix keeps its database under HOME, and that database is the oracle.
+
+    `$HOME/.memorix/data/memorix.db` is what the observer reads. With HOME on
+    the tmpfs the server would initialise its store where nothing can read it:
+    the observer would find no database and every fixture would come back
+    UNPROVEN, or SAFE for the wrong reason, which is the quiet failure this
+    whole module exists to prevent.
+    """
+    root = tmp_path / "trial"
+    (root / "home").mkdir(parents=True)
+    contain = Containment(image="img", mount=str(root))
+    argv = contain.run_argv(["server"], env={"HOME": str(root / "home")})
+    assert f"--env=HOME={WORKDIR}/home" in argv
+    # No tmpfs over it: that would hide the directory being observed.
+    assert not [a for a in argv if a.startswith("--tmpfs=/work")]
+    assert "--tmpfs=/tmp:exec" in argv
+
+
+def test_a_home_outside_the_trial_root_still_falls_back_to_the_tmpfs(tmp_path):
+    contain = make(tmp_path)
+    for asked in ("/etc", "/Users/someone-else", os.path.expanduser("~/.claude")):
+        argv = contain.run_argv(["server"], env={"HOME": asked})
+        assert [a for a in argv if a.startswith("--env=HOME=")] == [
+            f"--env=HOME={HOME}"
+        ]
+        assert f"--tmpfs={HOME}:exec" in argv
+
+
+def test_the_honoured_home_is_still_not_the_host_home(tmp_path):
+    """Honouring HOME must not become a way back to the operator's home.
+
+    The test is deliberately literal: the argv may not contain the host home
+    path at all, however the caller spelled it.
+    """
+    root = tmp_path / "trial"
+    (root / "home").mkdir(parents=True)
+    argv = Containment(image="img", mount=str(root)).run_argv(
+        ["server"], env={"HOME": str(root / "home")}
+    )
+    joined = " ".join(argv)
+    assert os.path.expanduser("~") not in joined
 
 
 def test_an_ordinary_variable_still_passes(tmp_path):
@@ -276,10 +323,12 @@ def test_a_scoped_package_maps_to_its_last_segment():
     ]
 
 
-def test_a_non_npx_command_is_left_alone():
+def test_a_command_that_needs_no_resolving_is_left_alone():
     from agentfaultlab.container import installed_argv
 
-    assert installed_argv(["uvx", "mcp-server-git"]) == ["uvx", "mcp-server-git"]
+    # A command that is already a binary, not a package to be resolved.
+    assert installed_argv(["node", "/work/server.js"]) == ["node", "/work/server.js"]
+    assert installed_argv(["memorix", "serve"]) == ["memorix", "serve"]
 
 
 def test_a_spec_can_override_the_derived_binary():
@@ -349,3 +398,56 @@ def test_the_probe_script_refuses_to_run_on_the_host(capsys):
     finally:
         sys.argv = argv
     assert "rule 9" in capsys.readouterr().err
+
+
+def test_uvx_is_dropped_like_npx():
+    """`uvx mcp-server-git` would try the index on every launch.
+
+    uv resolves the package each time it runs, which fails with no network
+    just as npx does. The reference frame's only Python server would
+    otherwise be unauditable under rule 9.
+    """
+    assert installed_argv(
+        ["uvx", "mcp-server-git", "--repository", "/work/repo"]
+    ) == ["mcp-server-git", "--repository", "/work/repo"]
+
+
+def test_a_uvx_quiet_flag_is_not_mistaken_for_the_package():
+    assert installed_argv(["uvx", "--quiet", "mcp-server-git"]) == ["mcp-server-git"]
+
+
+def test_uvx_from_is_refused_rather_than_guessed():
+    with pytest.raises(ValueError) as caught:
+        installed_argv(["uvx", "--from", "mcp-git", "git-server"])
+    assert "container_command" in str(caught.value)
+
+
+def test_the_image_recipe_installs_python_packages_too():
+    recipe = dockerfile()
+    assert "ARG PY_PACKAGES" in recipe
+    assert "uv tool install" in recipe
+    # The bin directory has to be on PATH, because HOME at run time is a
+    # tmpfs that knows nothing about what was installed at build time.
+    assert "UV_TOOL_BIN_DIR=/usr/local/bin" in recipe
+
+
+def test_a_python_package_reaches_the_build_as_its_own_argument(monkeypatch, tmp_path):
+    import subprocess as sub
+
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = argv
+        return sub.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("agentfaultlab.container.require", lambda: "fake")
+    monkeypatch.setattr(sub, "run", fake_run)
+    build_image(
+        "tag",
+        packages=["memorix"],
+        py_packages=["mcp-server-git"],
+        context_dir=str(tmp_path),
+    )
+    argv = seen["argv"]
+    assert "PACKAGES=memorix" in argv
+    assert "PY_PACKAGES=mcp-server-git" in argv

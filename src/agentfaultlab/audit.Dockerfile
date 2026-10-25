@@ -38,6 +38,26 @@ RUN set -u; mkdir -p /opt/afl; : > /opt/afl/installed; : > /opt/afl/failed; \
     echo "--- installed ---"; cat /opt/afl/installed; \
     echo "--- failed ---"; cat /opt/afl/failed
 
+# Python servers are installed the same way and recorded in the same files.
+# `uvx mcp-server-git` cannot run inside the container: uvx resolves the
+# package against the index on every launch, which fails with the network
+# off at run time, exactly as `npx` does. `uv tool install` with the bin
+# directory on PATH leaves a plain executable behind, which works whatever
+# HOME is set to at run time.
+ARG PY_PACKAGES=""
+RUN set -u; for pkg in $PY_PACKAGES; do \
+      echo "installing $pkg"; \
+      if UV_TOOL_BIN_DIR=/usr/local/bin uv tool install "$pkg" \
+            >/tmp/uv.log 2>&1; then \
+        echo "$pkg" >> /opt/afl/installed; \
+      else \
+        echo "$pkg" >> /opt/afl/failed; \
+        echo "FAILED $pkg:"; tail -5 /tmp/uv.log; \
+      fi; \
+    done; \
+    echo "--- installed ---"; cat /opt/afl/installed; \
+    echo "--- failed ---"; cat /opt/afl/failed
+
 USER afl
 ENV HOME=/home/afl
 WORKDIR /work
