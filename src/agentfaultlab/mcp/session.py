@@ -339,6 +339,38 @@ class ServerSession:
             seen_cursors.add(cursor)
         return tools
 
+    def _translate_arguments(self, arguments: Any) -> Any:
+        """Rewrite host paths in a tool call's arguments for the container.
+
+        A spec substitutes `{root}` before the call is made, so an argument
+        can be an absolute host path: `memorix_session_start` is given
+        `<trial root>/project`, and the filesystem and git fixtures are given
+        paths under the same root. Inside the container that same directory is
+        at `/work/project`, and the host spelling does not exist there.
+
+        Getting this wrong fails in two ways, both quiet. A server that
+        refuses the path makes every fixture BROKEN with the control failing,
+        which at least stops the run. A server that creates what is missing
+        writes somewhere the observer never reads, and every fixture scores
+        SAFE for the wrong reason. The launch command was already translated;
+        arguments are the other half of the same problem.
+
+        Only strings that resolve inside the mounted trial root are touched,
+        so SQL, keys and prose pass through untouched.
+        """
+        if self.containment is None:
+            return arguments
+        if isinstance(arguments, str):
+            return self.containment.translate(arguments)
+        if isinstance(arguments, dict):
+            return {
+                key: self._translate_arguments(value)
+                for key, value in arguments.items()
+            }
+        if isinstance(arguments, list):
+            return [self._translate_arguments(value) for value in arguments]
+        return arguments
+
     def call_tool(
         self,
         tool: str,
@@ -352,7 +384,7 @@ class ServerSession:
         A fault that leaves the caller without an answer is reported as
         `timed_out`, because that is all a real client would know.
         """
-        arguments = dict(arguments or {})
+        arguments = self._translate_arguments(dict(arguments or {}))
         budget = self.timeout_s if timeout_s is None else timeout_s
         request: Message = {
             "jsonrpc": "2.0",

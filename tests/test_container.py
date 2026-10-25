@@ -451,3 +451,44 @@ def test_a_python_package_reaches_the_build_as_its_own_argument(monkeypatch, tmp
     argv = seen["argv"]
     assert "PACKAGES=memorix" in argv
     assert "PY_PACKAGES=mcp-server-git" in argv
+
+
+def test_tool_call_arguments_are_translated_into_the_container(tmp_path):
+    """The other half of the path problem, found by auditing memorix contained.
+
+    The launch command was translated from the start; arguments were not.
+    memorix's `memorix_session_start` is given `<trial root>/project`, which
+    does not exist inside the container, and the server refused it: every
+    fixture came back BROKEN with the control failing. A server that created
+    the missing directory instead would have scored every fixture SAFE for
+    the wrong reason, with nothing in any log.
+    """
+    from agentfaultlab.mcp.session import ServerSession
+
+    root = tmp_path / "trial"
+    (root / "project").mkdir(parents=True)
+    session = ServerSession(
+        ["server"],
+        cwd=str(root),
+        containment=Containment(image="img", mount=str(root)),
+    )
+    translated = session._translate_arguments(
+        {
+            "path": str(root / "project"),
+            "query": "insert into charges values ('INV-1', 100)",
+            "nested": {"paths": [str(root / "repo" / "a.txt"), "not/a/path"]},
+            "count": 3,
+        }
+    )
+    assert translated["path"] == f"{WORKDIR}/project"
+    assert translated["query"] == "insert into charges values ('INV-1', 100)"
+    assert translated["nested"]["paths"] == [f"{WORKDIR}/repo/a.txt", "not/a/path"]
+    assert translated["count"] == 3
+
+
+def test_arguments_are_untouched_without_containment(tmp_path):
+    from agentfaultlab.mcp.session import ServerSession
+
+    session = ServerSession(["server"], cwd=str(tmp_path))
+    arguments = {"path": str(tmp_path / "x"), "n": 1}
+    assert session._translate_arguments(dict(arguments)) == arguments
