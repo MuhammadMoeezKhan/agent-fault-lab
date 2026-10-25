@@ -737,3 +737,65 @@ def test_f5_partial_batch_is_its_own_verdict():
     )[0]
     assert verdict.verdict == PARTIAL
     assert any("partial over-application" in note for note in verdict.notes)
+
+
+def _verdict(**overrides):
+    from agentfaultlab.audit import ToolVerdict
+
+    fields = dict(
+        server="s",
+        tool="t",
+        fixture="f",
+        fault="F7",
+        verdict="SAFE",
+        safety_mechanism="absorbed_repeat",
+        multiplicities=["once"],
+        mutating=True,
+        repeat_distinguishable=True,
+        confirmable=True,
+        caller_left_unsure=False,
+        dedup_argument=None,
+        read_only_hint=None,
+        idempotent_hint=None,
+    )
+    fields.update(overrides)
+    return ToolVerdict(**fields)
+
+
+def test_the_csv_columns_cover_every_field_a_row_carries(tmp_path):
+    """The column list is a second copy of the row's keys, so it can drift.
+
+    It did: `contained` and `image` were added to `as_row()` and not to
+    `COLUMNS`, and `DictWriter` then raised on the first verdict of every
+    audit that produced one. Because the CSV was written before the JSONL,
+    that exception took the JSONL with it, which is the form the pooling
+    script reads. One batch of nine servers was lost to it.
+    """
+    from agentfaultlab import report
+
+    verdict = _verdict()
+    assert set(verdict.as_row()) <= set(report.COLUMNS)
+    path = tmp_path / "rows.csv"
+    report.to_csv([verdict], str(path))
+    header = path.read_text(encoding="utf-8").splitlines()[0].split(",")
+    assert "contained" in header
+    assert "image" in header
+
+
+def test_an_unlisted_field_is_refused_before_anything_is_written(tmp_path):
+    from agentfaultlab import report
+
+    verdict = _verdict()
+    original = verdict.as_row
+
+    def with_extra():
+        row = original()
+        row["something_new"] = 1
+        return row
+
+    verdict.as_row = with_extra
+    path = tmp_path / "rows.csv"
+    with pytest.raises(ValueError) as caught:
+        report.to_csv([verdict], str(path))
+    assert "something_new" in str(caught.value)
+    assert not path.exists()

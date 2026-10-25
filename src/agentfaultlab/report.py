@@ -42,15 +42,39 @@ COLUMNS = (
     "annotation_violations",
     "deterministic",
     "notes",
+    # Added with containment. A row that does not say whether its server ran
+    # inside the container cannot be read a month later, and the audit now
+    # mixes host-collected pre-rule rows with contained ones.
+    "contained",
+    "image",
 )
 
 
 def to_csv(verdicts: Sequence[ToolVerdict], path: str) -> None:
+    """Write the rows, with every field a row carries.
+
+    The column list used to be a second, hand-maintained copy of the row's
+    keys, and it fell behind: `contained` and `image` were added to the row
+    and not here, so `DictWriter` raised on the first verdict of every audit
+    that produced one. The Markdown report was written before the CSV and the
+    JSONL after it, which means the exception destroyed the JSONL, the one
+    form the pooling script reads. Unknown keys are now an explicit failure
+    at the top rather than a crash per row, and the writer takes the row's
+    own keys, so the two cannot drift again.
+    """
+    rows = [verdict.as_row() for verdict in verdicts]
+    fieldnames = list(COLUMNS)
+    extra = [key for row in rows for key in row if key not in COLUMNS]
+    if extra:
+        raise ValueError(
+            "audit rows carry fields the report does not list: "
+            + ", ".join(sorted(set(extra)))
+        )
     with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        for verdict in verdicts:
-            writer.writerow(verdict.as_row())
+        for row in rows:
+            writer.writerow(row)
 
 
 def to_jsonl(verdicts: Sequence[ToolVerdict], path: str) -> None:

@@ -238,10 +238,13 @@ def _run_check(args: argparse.Namespace) -> int:
             handle.write(markdown)
     else:
         print(markdown)
-    if args.csv:
-        report.to_csv(verdicts, args.csv)
+    # The JSONL first: it is the form the pooling script reads and the only
+    # complete record of a run, so it should not be the thing a failure in
+    # another writer destroys.
     if args.jsonl:
         report.to_jsonl(verdicts, args.jsonl)
+    if args.csv:
+        report.to_csv(verdicts, args.csv)
     return 0 if args.exit_zero else report.exit_code(verdicts)
 
 
