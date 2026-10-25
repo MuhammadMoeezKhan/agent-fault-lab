@@ -19,6 +19,7 @@ reach the server through the same fault proxy and see the same faults.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
@@ -44,6 +45,36 @@ SYSTEM_PROMPT = (
 
 class OllamaUnavailable(RuntimeError):
     """The local model server is not reachable."""
+
+
+class DeliberationUnbounded(RuntimeError):
+    """The model kept reasoning past the deadline without finishing a turn.
+
+    This is a separate failure from `OllamaUnavailable` because it has a
+    separate cause, and the pilot spent two batches confusing the two. Six
+    episodes errored with "timed out", at 303s against a 300s limit and then
+    at 902s against a 900s limit, while the longest completed episode took
+    245s. The server was not slow and it had not died: with `stream: false`
+    the HTTP response simply does not begin until generation ends, so a model
+    that never stops generating is indistinguishable from a dead server.
+
+    Streaming separates them. In the diagnosis run the first chunk arrived at
+    0.5s every time and the reasoning channel then produced about 78
+    characters a second, indefinitely, with no content and no tool call. The
+    text was a loop: 167 sentences, 43 of them distinct, with "But the user
+    wants to know when it exists" and "But the user might not want that"
+    repeating 24 times each at temperature 0.
+
+    So this exception means the model did not terminate, and the episode is
+    attrition caused by the prompt rather than by the infrastructure. That
+    distinction belongs in the results, because the arm that induces it is
+    the treatment arm.
+    """
+
+    def __init__(self, message: str, *, thinking_chars: int = 0, chunks: int = 0):
+        super().__init__(message)
+        self.thinking_chars = thinking_chars
+        self.chunks = chunks
 
 
 def available(timeout: float = 5.0) -> bool:
@@ -80,11 +111,21 @@ class OllamaAgent:
     # ------------------------------------------------------------------ plumbing
 
     def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]):
+        """One turn, streamed.
+
+        Streaming is not for progress reporting. It is what makes a stalled
+        server distinguishable from a model that never stops: with
+        `stream: false` neither sends a byte, and both surface as a socket
+        timeout. See `DeliberationUnbounded`.
+
+        The payload is otherwise unchanged (same messages, same tools, same
+        temperature), so the model sees exactly what it saw before.
+        """
         payload = {
             "model": self.model,
             "messages": messages,
             "tools": tools,
-            "stream": False,
+            "stream": True,
             "options": {"temperature": self.temperature},
         }
         request = urllib.request.Request(
@@ -92,11 +133,49 @@ class OllamaAgent:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
+        content: list[str] = []
+        calls: list[dict[str, Any]] = []
+        thinking_chars = 0
+        chunks = 0
+        started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                return json.loads(response.read().decode("utf-8"))
+                for line in response:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    chunks += 1
+                    event = json.loads(line.decode("utf-8"))
+                    message = event.get("message") or {}
+                    content.append(message.get("content") or "")
+                    thinking_chars += len(message.get("thinking") or "")
+                    calls.extend(message.get("tool_calls") or [])
+                    if event.get("done"):
+                        break
+                    if time.monotonic() - started > self.timeout_s:
+                        raise DeliberationUnbounded(
+                            f"no completed turn within {self.timeout_s:.0f}s: "
+                            f"{chunks} chunks, {thinking_chars} characters of "
+                            f"reasoning, {len(calls)} tool calls",
+                            thinking_chars=thinking_chars,
+                            chunks=chunks,
+                        )
+                else:
+                    raise DeliberationUnbounded(
+                        f"the stream ended without a completed turn after "
+                        f"{chunks} chunks",
+                        thinking_chars=thinking_chars,
+                        chunks=chunks,
+                    )
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             raise OllamaUnavailable(f"{OLLAMA_CHAT}: {exc}") from exc
+        return {
+            "message": {
+                "content": "".join(content),
+                **({"tool_calls": calls} if calls else {}),
+            },
+            "thinking_chars": thinking_chars,
+        }
 
     @staticmethod
     def _tool_schema(tools) -> list[dict[str, Any]]:
@@ -200,5 +279,11 @@ class OllamaAgent:
                 "",
             )
             return {"text": last or "", "turns": turns, "error": "max turns reached"}
-        except (OllamaUnavailable, SessionError, CallTimeout, OSError) as exc:
+        except (
+            OllamaUnavailable,
+            DeliberationUnbounded,
+            SessionError,
+            CallTimeout,
+            OSError,
+        ) as exc:
             return {"text": "", "turns": turns, "error": f"{type(exc).__name__}: {exc}"}

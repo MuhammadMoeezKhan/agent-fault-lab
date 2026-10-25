@@ -118,9 +118,11 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         type=float,
         default=300.0,
         help=(
-            "seconds to wait for one local-model reply. A thinking model can "
-            "spend minutes on a single turn, and a reply that never arrives "
-            "costs the whole episode, so raise this rather than lose cells"
+            "deadline for one local-model turn. The loop streams, so this "
+            "tells a server that stopped answering apart from a model that is "
+            "still producing tokens and never finishing. The second is "
+            "recorded as non-termination, and raising this does not recover "
+            "it: the same six episodes failed at 300s and at 900s"
         ),
     )
     parser.add_argument(
