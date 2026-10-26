@@ -280,8 +280,19 @@ class ClaudeCodeAgent:
         binary: str = "claude",
         tool_timeout_ms: int = 20000,
         config_dir: Optional[str] = None,
+        disable_slash_commands: bool = False,
     ) -> None:
         self.model = model
+        #: DECISIONS.md Q22-A: the main run passes this, so the measured
+        #: system is reproducible from the published command line by someone
+        #: who does not have this account. A login syncs the account's skills
+        #: into the clean config directory, and skill descriptions reach the
+        #: session's system prompt, so what the agent carries would otherwise
+        #: vary with whatever the account synced that week. Off by default
+        #: because the pilot batches were collected without it and are
+        #: reported as collected; they are not strictly poolable with the main
+        #: run, which is why the flag is named in the agent label.
+        self.disable_slash_commands = disable_slash_commands
         #: A config directory holding nothing but a login, so the user-level
         #: CLAUDE.md, skills, plugins and hooks of the operator's everyday
         #: setup are not in the measured session. That was the largest
@@ -308,6 +319,7 @@ class ClaudeCodeAgent:
             f"claude-code {self.version} (model {model}, "
             f"tool timeout {tool_timeout_ms}ms"
             + (", clean config" if config_dir else ", operator config")
+            + (", no skills" if disable_slash_commands else "")
             + ")"
         )
 
@@ -342,6 +354,8 @@ class ClaudeCodeAgent:
             "--disallowed-tools",
             " ".join(DENIED_BUILTINS),
         ]
+        if self.disable_slash_commands:
+            command.append("--disable-slash-commands")
         try:
             completed = subprocess.run(
                 command,

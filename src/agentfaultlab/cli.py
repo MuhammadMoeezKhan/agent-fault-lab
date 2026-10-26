@@ -151,6 +151,15 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         default=os.path.expanduser("~/.agent-fault-lab/episodes.json"),
         help="where the daily episode budget is tracked",
     )
+    parser.add_argument(
+        "--disable-slash-commands",
+        action="store_true",
+        help=(
+            "pass --disable-slash-commands to the hosted agent, so the account's "
+            "synced skills do not reach the measured session (DECISIONS.md "
+            "Q22-A: the main run uses this; the pilot batches did not)"
+        ),
+    )
     parser.add_argument("--daily-cap", type=int, default=35)
     parser.add_argument(
         "--any-hour",
@@ -264,6 +273,7 @@ def _build_agent(
     descriptor: str,
     timeout_s: float = 300.0,
     config_dir: Optional[str] = None,
+    disable_slash_commands: bool = False,
 ):
     """`ollama`, `ollama:qwen3:8b`, `claude`, or `claude:sonnet`."""
     kind, _, model = descriptor.partition(":")
@@ -280,7 +290,11 @@ def _build_agent(
     if kind in ("claude", "claude-code"):
         from .consequence import ClaudeCodeAgent
 
-        return ClaudeCodeAgent(model=model or "sonnet", config_dir=config_dir)
+        return ClaudeCodeAgent(
+            model=model or "sonnet",
+            config_dir=config_dir,
+            disable_slash_commands=disable_slash_commands,
+        )
     raise SystemExit(f"unknown agent {descriptor!r}; use ollama[:model] or claude[:model]")
 
 
@@ -308,7 +322,10 @@ def _run_consequence(args: argparse.Namespace) -> int:
 
     planned = len(tasks) * len(conditions) * len(arms) * args.repeats
     agent = _build_agent(
-        args.agent, timeout_s=args.agent_timeout, config_dir=args.config_dir
+        args.agent,
+        timeout_s=args.agent_timeout,
+        config_dir=args.config_dir,
+        disable_slash_commands=args.disable_slash_commands,
     )
     # Only the subscription arm draws on a rate limit that is shared with his
     # own interactive work, so only that arm is metered.
