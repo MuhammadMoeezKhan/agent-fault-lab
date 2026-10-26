@@ -312,3 +312,46 @@ def test_launch_arguments_reach_the_csv_as_text(tmp_path):
     body = (out / "frame3-random.csv").read_text(encoding="utf-8")
     assert "launch_argv" in body.splitlines()[0]
     assert ",serve," in body
+
+
+def test_a_definitive_http_answer_is_not_retried(monkeypatch):
+    """A 404 is a fact, not a transient failure.
+
+    The frames derivation spent over four hours on 12,000 npm lookups, most of
+    it in backoff for packages the MCP registry lists and npm has never heard
+    of. Three attempts with 1.5s and 3s of sleep between them is 4.5 seconds
+    to learn the same thing three times.
+    """
+    import urllib.error
+
+    module = _load()
+    attempts = []
+
+    def refuse(request, timeout=None):
+        attempts.append(1)
+        raise urllib.error.HTTPError(
+            request.full_url, 404, "Not Found", {}, None
+        )
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(module.time, "sleep", lambda *a: None)
+    assert module._get("https://example.invalid/thing") is None
+    assert len(attempts) == 1
+
+
+def test_a_transient_http_answer_is_still_retried(monkeypatch):
+    import urllib.error
+
+    module = _load()
+    attempts = []
+
+    def refuse(request, timeout=None):
+        attempts.append(1)
+        raise urllib.error.HTTPError(
+            request.full_url, 503, "Service Unavailable", {}, None
+        )
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(module.time, "sleep", lambda *a: None)
+    assert module._get("https://example.invalid/thing") is None
+    assert len(attempts) == 3

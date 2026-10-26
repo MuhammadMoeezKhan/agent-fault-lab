@@ -77,6 +77,15 @@ REFERENCE_PACKAGES = (
 )
 
 
+#: Statuses that are an answer rather than a transient failure. Retrying them
+#: wastes 4.5 seconds each and gives the same answer. The frames run that
+#: prompted this spent over four hours on 12,000 npm lookups, most of the time
+#: in backoff for packages the registry lists and npm has never heard of: a
+#: registry entry can name a package that was never published, or was
+#: unpublished later, and "404" is exactly the fact the funnel wants to record.
+DEFINITIVE_STATUS = (400, 401, 403, 404, 405, 410, 422, 451)
+
+
 def _get(url: str, *, timeout: float = 30.0, retries: int = 3) -> Optional[Any]:
     """GET and parse JSON, with backoff. Returns None rather than raising."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -84,7 +93,14 @@ def _get(url: str, *, timeout: float = 30.0, retries: int = 3) -> Optional[Any]:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+        except urllib.error.HTTPError as exc:
+            if exc.code in DEFINITIVE_STATUS:
+                return None
+            if attempt == retries - 1:
+                print(f"  warning: {url} failed: {exc}", file=sys.stderr)
+                return None
+            time.sleep(1.5 * (attempt + 1))
+        except (urllib.error.URLError, TimeoutError,
                 json.JSONDecodeError, OSError) as exc:
             if attempt == retries - 1:
                 print(f"  warning: {url} failed: {exc}", file=sys.stderr)
