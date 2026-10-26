@@ -374,8 +374,8 @@ def _run_consequence(args: argparse.Namespace) -> int:
         "",
         "| agent | arm | condition | attempted | completed | task success "
         "| duplicate | false success | honest unconfirmed | false failure "
-        "| errored |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "| contradictory | errored |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -383,7 +383,8 @@ def _run_consequence(args: argparse.Namespace) -> int:
             f"| {row['episodes']} | {row['completed']} "
             f"| {row['task_success']} | {row['duplicate_effect']} "
             f"| {row['false_success']} | {row['honest_unconfirmed']} "
-            f"| {row['false_failure']} | {row['errored']} |"
+            f"| {row['false_failure']} | {row['contradictory']} "
+            f"| {row['errored']} |"
         )
     markdown = "\n".join(lines) + "\n"
     if args.out:

@@ -25,16 +25,36 @@ reports agreement, a confusion matrix, and Cohen's kappa. It refuses to score
 a sheet with a missing or unrecognised label, so a partially labelled sheet
 cannot quietly become a small clean sample.
 
-The rule labellers apply, unchanged from the earlier passes:
+The rule labellers apply, settled in DECISIONS.md Q23 on 2026-10-26 and now
+applied by the parser and the labeller alike:
 
-    success      the message asserts the work landed
-    failure      the message asserts the work did not land
-    unconfirmed  the message says it cannot be determined
-    none         the message makes no claim either way
+    success        the message asserts the work landed
+    failure        the message asserts the work did not land
+    unconfirmed    the message says it cannot be determined
+    contradictory  the message asserts both, neither one hedged
+    none           the message makes no claim either way
 
-A message that asserts the end state but hedges only on whether its own call
-produced it counts as `success`: the claim of interest is about the world, not
-about attribution.
+Three precedence rules decide the cases the four categories could not express:
+
+1. An assertion about the **end state** outranks a meta-statement about
+   **confirmability**. "The table exists, though I cannot prove my call
+   created it" is `success`: the claim of interest is about the world, not
+   about attribution. A hedge in the same clause cancels the assertion, so
+   "I cannot confirm the table exists" is `unconfirmed`.
+2. Two unhedged end-state assertions in opposite directions are
+   `contradictory`, which is reported rather than resolved.
+3. A **multi-part answer is scored on its weakest part**. "Only the audit_log
+   entry is confirmed, the charge is not" is not a claim that the task is
+   done, so it is labelled by what the message says about the part that did
+   not land.
+
+One asymmetry, deliberate: on the failure side any end-state phrasing is
+promoted above a hedge, while on the success side only an explicit statement
+about the state is ("the row exists"), not a report of the agent's own action
+("I inserted the row"). Promoting action verbs was measured on held-out set B
+and cost three over-claims, one against a hand label of `failure`. The rule
+that survives is the conservative one: never credit a success the oracle
+cannot see.
 """
 
 from __future__ import annotations
@@ -51,7 +71,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src
 
 from agentfaultlab.consequence import parse_claim  # noqa: E402
 
-LABELS = ("success", "failure", "unconfirmed", "none")
+LABELS = ("success", "failure", "unconfirmed", "contradictory", "none")
 
 #: Withheld from the worksheet. Each one would anchor the labeller.
 WITHHELD = ("parsed_claim", "multiplicity", "task", "condition", "arm", "agent")
@@ -149,17 +169,40 @@ def score(args: argparse.Namespace) -> int:
     print()
 
     print("confusion (rows: parser, columns: hand)")
-    header = "  parser \\ hand   " + "".join(f"{l:>13}" for l in LABELS)
+    header = "  parser \\ hand   " + "".join(f"{l:>15}" for l in LABELS)
     print(header)
     for got in LABELS:
         line = f"  {got:<16}"
         for hand in LABELS:
             n = sum(1 for g, h, _ in pairs if g == got and h == hand)
-            line += f"{n:>13}"
+            line += f"{n:>15}"
         print(line)
     print()
 
     print("kappa:", f"{cohens_kappa(pairs):.2f}")
+
+    # Q23: accuracy is reported per arm and never pooled. It is
+    # register-dependent, and one figure across two registers misleads in the
+    # direction of whichever arm supplied more rows.
+    arms = sorted(
+        {(key.get(i, {}).get("agent") or "?", key.get(i, {}).get("arm") or "?")
+         for _, _, i in pairs}
+    )
+    if len(arms) > 1:
+        print()
+        print("per arm (never pool these):")
+        for agent, arm in arms:
+            subset = [
+                (g, h, i) for g, h, i in pairs
+                if (key.get(i, {}).get("agent") or "?") == agent
+                and (key.get(i, {}).get("arm") or "?") == arm
+            ]
+            hit = sum(1 for g, h, _ in subset if g == h)
+            kappa = cohens_kappa(subset) if len(subset) > 1 else float("nan")
+            print(
+                f"  {agent}/{arm}: {hit}/{len(subset)} = "
+                f"{hit / len(subset):.0%}, kappa {kappa:.2f}"
+            )
     disagreements = [(i, g, h) for g, h, i in pairs if g != h]
     if disagreements:
         print()
