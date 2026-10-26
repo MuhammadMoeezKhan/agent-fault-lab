@@ -83,6 +83,16 @@ def _add_check(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--jsonl", help="write the rows as JSONL here")
     parser.add_argument("--trace", help="write a JSONL trace of every message here")
     parser.add_argument(
+        "--image",
+        metavar="IMAGE",
+        help=(
+            "container image to run the server in, overriding the spec's "
+            "(default: agent-fault-lab:audit). There is no flag for running a "
+            "third-party server outside a container: rule 9 does not have an "
+            "off switch"
+        ),
+    )
+    parser.add_argument(
         "--exit-zero",
         action="store_true",
         help="always exit 0, even when findings are reported",
@@ -197,6 +207,8 @@ def _list_faults() -> int:
 
 def _run_check(args: argparse.Namespace) -> int:
     target, fixtures = spec.load(args.spec)
+    if args.image:
+        target.image = args.image
     if args.tool:
         wanted = set(args.tool)
         fixtures = [fixture for fixture in fixtures if fixture.tool in wanted]

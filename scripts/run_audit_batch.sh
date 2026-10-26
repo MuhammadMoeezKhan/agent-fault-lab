@@ -45,7 +45,7 @@ for spec in "$ROOT"/specs/*.json; do
     "$PY" -m agentfaultlab.cli check "$spec" \
         --faults "$faults" \
         --repeats "$REPEATS" \
-        --contain "$IMAGE" \
+        --image "$IMAGE" \
         --exit-zero \
         --out "$OUT/audit-$name.md" \
         --csv "$OUT/audit-$name.csv" \
