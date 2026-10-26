@@ -1,0 +1,31 @@
+{
+  "server": {
+    "name": "community-odoo-lint",
+    "command": ["uvx", "odoo-linter", "mcp"],
+    "version": "odoo-linter 0.1.0a17 (PyPI)",
+    "observer": {
+      "kind": "filesystem",
+      "path": "my_addon"
+    },
+    "timeout_s": 120.0,
+    "container_command": ["odoo-linter", "mcp"],
+    "note": "the one mutating tool in the sample that declares idempotentHint true and means it: the fixture's two fixable violations are gone after the first call, so a repeat has nothing left to change. That makes S1 and S2 equal and the duplicate undetectable by construction, which is the testability condition rather than a safety property.",
+    "setup": {
+      "files": {
+        "my_addon/__manifest__.py": "{\n    'name': 'My Addon',\n    'version': '18.0.1.0.0',\n    'depends': ['base'],\n    'author': 'Someone',\n}\n",
+        "my_addon/__init__.py": "from . import models\n",
+        "my_addon/models/__init__.py": "from . import thing\n",
+        "my_addon/models/thing.py": "from odoo import models, fields, _\n\n\nclass Thing(models.Model):\n    _name = 'my.thing'\n    name = fields.Char(string='Name')\n\n    def act(self):\n        raise UserError('plain string, not translated')\n",
+        "my_addon/i18n/my_addon.pot": "msgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain\\n\"\n\nmsgid \"Name\"\nmsgstr \"\"\n"
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "tool": "fix",
+      "arguments": {"paths": ["{root}/my_addon"]},
+      "probes": [["check", {"paths": ["{root}/my_addon"]}]],
+      "note": "rewrites two files in place; declares idempotentHint true"
+    }
+  ]
+}

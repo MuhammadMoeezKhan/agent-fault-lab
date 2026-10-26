@@ -1,0 +1,49 @@
+{
+  "server": {
+    "name": "community-stashpad",
+    "command": ["npx", "-y", "stashpad", "mcp"],
+    "version": "stashpad 0.2.2 (npm)",
+    "observer": {
+      "kind": "filesystem",
+      "path": ".stashpad",
+      "ignore": [
+        "memories/*.jsonl",
+        "memories/handoffs/*",
+        "memories/.stashpad-store.backup.json"
+      ]
+    },
+    "timeout_s": 60.0,
+    "container_command": ["stashpad", "mcp"],
+    "note_container": "the store is written under the working directory, at {root}/.stashpad, so the mount is enough and HOME does not need moving",
+    "note": "the only server in the sample whose write tool takes a caller-supplied id, so a repeat has a key to collapse onto.",
+    "note_ignore": "two of its append-only logs (audit.jsonl, feedback.jsonl) stamp every line with a wall clock time to the millisecond, and handoff files are named with a timestamp and a random suffix. None of them can be compared by digest across a replay, so they are excluded and the two fixtures below are the ones whose effect lands in keyed state. The consequence is reported, not hidden: a repeat of stashpad_feedback appends a second log line that this audit cannot see, so its verdict would be safe-by-absorption when the log in fact grew.",
+    "setup": {
+      "files": {
+        ".stashpad/memories/.stashpad-store.json": "{\n  \"format\": 1,\n  \"written_by\": \"stashpad 0.2.2\"\n}\n",
+        ".stashpad/memories/seed-one.md": "---\nid: seed-one\nkind: fact\ncreated_at: 2026-01-01\nvalid_from: 2026-01-01\nvalid_to: null\nsupersedes: null\nsuperseded_by: null\nsource_type: human\nsource_ref: the audit fixture\ntrust: human-confirmed\nlast_confirmed_at: 2026-01-01\n---\ninvoice 99 was paid\n"
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "tool": "stashpad_save",
+      "arguments": {
+        "id": "invoice-100-paid",
+        "kind": "fact",
+        "text": "invoice 100 was paid",
+        "source_ref": "the audit fixture"
+      },
+      "probes": [["stashpad_recent", {}]],
+      "note": "declared not idempotent, but keyed by a caller-supplied id. The written file carries a created_at date, so a run that crosses midnight would not reproduce."
+    },
+    {
+      "tool": "stashpad_forget",
+      "arguments": {
+        "id": "seed-one",
+        "reason": "the audit fixture"
+      },
+      "probes": [["stashpad_recent", {}]],
+      "note": "declares idempotentHint true; the request file is keyed by its target and carries no timestamp"
+    }
+  ]
+}

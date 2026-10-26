@@ -147,18 +147,31 @@ def probe_once(
     return record
 
 
-def build_probe_image(tag: str, packages: list[str]) -> dict[str, list[str]]:
+def build_probe_image(
+    tag: str, candidates: list[dict[str, Any]]
+) -> dict[str, list[str]]:
     """Install the candidates into the audit image, once, with network.
 
     A candidate that cannot be installed here cannot be audited at all under
     rule 9, which is a funnel category of its own rather than a failure to
     start: @wonderwhy-er/desktop-commander depends on fsevents, a macOS-only
     native module that node-gyp cannot build on Linux.
+
+    The two runners are kept apart deliberately. An earlier version passed
+    every candidate to `npm install -g`, so three PyPI packages came back as
+    "cannot be installed in the audit image" without ever having been tried
+    as Python packages. That is a funnel category being reported for a
+    candidate that belongs in a different one, which is worse than a crash.
     """
     from agentfaultlab.container import build_image, require
 
     require()
-    build_image(tag, packages=packages, quiet=False)
+    npm = [row["package"] for row in candidates if row["runner"] == "npx"]
+    pypi = [row["package"] for row in candidates if row["runner"] == "uvx"]
+    other = sorted({row["runner"] for row in candidates} - {"npx", "uvx"})
+    if other:
+        raise SystemExit(f"no install path for runner(s): {', '.join(other)}")
+    build_image(tag, packages=npm, py_packages=pypi, quiet=False)
     installed: list[str] = []
     failed: list[str] = []
     for name, sink in (("installed", installed), ("failed", failed)):
@@ -273,7 +286,7 @@ def main() -> int:
         if not args.contain:
             print("--build needs --contain IMAGE", file=sys.stderr)
             return 2
-        wanted = [rows[n]["package"] for n in args.names if n in rows]
+        wanted = [rows[n] for n in args.names if n in rows]
         outcome = build_probe_image(args.contain, wanted)
         print(f"\nimage {args.contain}")
         print(f"  installed: {len(outcome['installed'])} {outcome['installed']}")
