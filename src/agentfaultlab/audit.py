@@ -311,12 +311,22 @@ class Audit:
         settle_s: float = 1.0,
         trace: Optional[TraceWriter] = None,
         workdir: Optional[str] = None,
+        keep_roots: bool = False,
     ) -> None:
         self.target = target
         self.repeats = max(1, repeats)
         self.settle_s = settle_s
         self.trace = trace
         self.workdir = workdir
+        #: Leave each trial's tree on disk instead of removing it. For
+        #: diagnosis only, and never for a run that produces rows: a verdict
+        #: is only meaningful if every trial started from a fresh backend, and
+        #: a kept tree invites reading the state by hand and believing it.
+        #: What it is for is answering "why do two identical clean runs
+        #: differ", which a snapshot diff can localise to a file but not
+        #: explain. The paths are collected here so a caller can find them.
+        self.keep_roots = keep_roots
+        self.kept_roots: list[str] = []
         #: The server's own `serverInfo`, filled in by `list_tools`. An npx or
         #: uvx command resolves to whatever is current, so the run has to
         #: record what actually answered rather than what was asked for.
@@ -329,6 +339,12 @@ class Audit:
         if self.target.setup is not None:
             self.target.setup(root)
         return root
+
+    def _discard(self, root: str) -> None:
+        if self.keep_roots:
+            self.kept_roots.append(root)
+            return
+        shutil.rmtree(root, ignore_errors=True)
 
     def _session(self, root: str, plan: Optional[Any]) -> ServerSession:
         return ServerSession(
@@ -377,7 +393,7 @@ class Audit:
                     )
                 return tools
         finally:
-            shutil.rmtree(root, ignore_errors=True)
+            self._discard(root)
 
     # --------------------------------------------------------------------- trials
 
@@ -439,7 +455,7 @@ class Audit:
             result.error = f"{type(exc).__name__}: {exc}"
             after = observer.snapshot()
         finally:
-            shutil.rmtree(root, ignore_errors=True)
+            self._discard(root)
 
         last = result.calls[-1] if result.calls else None
         result.caller_saw_success = bool(last and last.caller_saw_success)
