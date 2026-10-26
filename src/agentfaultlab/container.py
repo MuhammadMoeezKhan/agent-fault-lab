@@ -276,6 +276,79 @@ def _blocked(key: str) -> bool:
     return any(upper.startswith(prefix) or prefix in upper for prefix in BLOCKED_ENV)
 
 
+#: Cached per image, because answering it costs a container start and the
+#: answer is baked into the image at build time.
+_RECORDED: dict[str, tuple[frozenset, frozenset]] = {}
+
+
+def recorded_packages(image: str) -> tuple[frozenset, frozenset]:
+    """What the image records as installed and as failed to install.
+
+    The build writes both lists because one unbuildable server should not cost
+    the image every other server. The cost of that choice is that a failed
+    install can leave a binary on PATH anyway: npm wrote a
+    `desktop-commander` shim into the image even though its install failed on
+    fsevents. Starting it would give a server that answers `initialize` and
+    then fails on its first call, and a fixture scored from that is worse than
+    no fixture.
+
+    An empty pair means the image does not carry the lists, which is not an
+    error: an image built by hand is the caller's business.
+    """
+    if image in _RECORDED:
+        return _RECORDED[image]
+    lists = []
+    for name in ("installed", "failed"):
+        done = subprocess.run(
+            [DOCKER, "run", "--rm", "--network=none", image, "cat", f"/opt/afl/{name}"],
+            capture_output=True,
+            text=True,
+        )
+        lists.append(
+            frozenset(line for line in done.stdout.split() if line)
+            if done.returncode == 0
+            else frozenset()
+        )
+    answer = (lists[0], lists[1])
+    _RECORDED[image] = answer
+    return answer
+
+
+def require_installed(image: str, package: str) -> None:
+    """Refuse to start a server whose package did not install in the image."""
+    if not package:
+        return
+    installed, failed = recorded_packages(image)
+    if not installed and not failed:
+        return
+    if package in failed:
+        raise ContainerError(
+            f"{package} failed to install in {image}, so it cannot be audited "
+            "under rule 9. A failed install can still leave a binary on PATH, "
+            "which would answer initialize and then fail on its first call."
+        )
+    if package not in installed:
+        raise ContainerError(
+            f"{package} is not installed in {image}. Rebuild the image with it "
+            "in PACKAGES (or PY_PACKAGES): the run has no network, so a "
+            "launcher cannot fetch it mid-trial."
+        )
+
+
+def package_of(command: Sequence[str]) -> str:
+    """The package a launcher command would fetch, or "" if it is not one."""
+    argv = list(command)
+    if not argv:
+        return ""
+    launcher = os.path.basename(argv[0])
+    if launcher not in RESOLVERS:
+        return ""
+    rest = [part for part in argv[1:] if part not in RESOLVERS[launcher]]
+    if not rest or rest[0] == "--from":
+        return ""
+    return rest[0]
+
+
 # ------------------------------------------------------------------ image build
 
 #: The image recipe lives in a file rather than a string in this module.

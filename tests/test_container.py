@@ -510,3 +510,55 @@ def test_the_root_is_the_workdir_by_either_spelling(tmp_path):
     # And with a mount given by its resolved spelling instead.
     other = Containment(image="img", mount=os.path.realpath(str(tmp_path)))
     assert other.translate(str(tmp_path)) == WORKDIR
+
+
+# ------------------------------------------------- what the image says it has
+
+
+def test_a_package_whose_install_failed_is_refused(monkeypatch):
+    """A failed install can still leave a binary on PATH.
+
+    npm wrote a `desktop-commander` shim into the audit image even though the
+    install failed on fsevents. Starting it gives a server that answers
+    initialize and fails on its first call, which scores a fixture from a
+    server that was never built.
+    """
+    import agentfaultlab.container as module
+
+    monkeypatch.setattr(
+        module, "recorded_packages", lambda image: (frozenset({"memorix"}), frozenset({"bad-pkg"}))
+    )
+    with pytest.raises(ContainerError) as caught:
+        module.require_installed("img", "bad-pkg")
+    assert "rule 9" in str(caught.value)
+    module.require_installed("img", "memorix")
+
+
+def test_a_package_the_image_never_installed_is_refused(monkeypatch):
+    import agentfaultlab.container as module
+
+    monkeypatch.setattr(
+        module, "recorded_packages", lambda image: (frozenset({"memorix"}), frozenset())
+    )
+    with pytest.raises(ContainerError) as caught:
+        module.require_installed("img", "never-heard-of-it")
+    assert "no network" in str(caught.value)
+
+
+def test_an_image_without_the_lists_is_left_alone(monkeypatch):
+    import agentfaultlab.container as module
+
+    monkeypatch.setattr(
+        module, "recorded_packages", lambda image: (frozenset(), frozenset())
+    )
+    module.require_installed("hand-built", "anything")
+
+
+def test_the_package_a_launcher_would_fetch():
+    from agentfaultlab.container import package_of
+
+    assert package_of(["npx", "-y", "memorix", "serve"]) == "memorix"
+    assert package_of(["uvx", "mcp-server-git", "--repository", "/work"]) == "mcp-server-git"
+    assert package_of(["npx", "-y", "@cyanheads/git-mcp-server"]) == "@cyanheads/git-mcp-server"
+    assert package_of(["memorix", "serve"]) == ""
+    assert package_of([]) == ""

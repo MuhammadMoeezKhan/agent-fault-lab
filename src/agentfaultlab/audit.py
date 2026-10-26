@@ -341,7 +341,26 @@ class Audit:
             containment=self.target.containment(root),
         )
 
+    def check_image(self) -> None:
+        """Refuse a contained run whose package did not install in the image.
+
+        Checked once per audit, before any trial, because the alternative is a
+        server that starts from a shim npm left behind after a failed install
+        and then fails on its first call. A fixture scored from that is worse
+        than a fixture not run.
+        """
+        if not self.target.contained or self.target.container_command:
+            # An explicit container_command names a binary rather than a
+            # package, so there is nothing to look up.
+            return
+        from .container import package_of, require_installed
+
+        package = package_of(self.target.command)
+        if package:
+            require_installed(self.target.image, package)
+
     def list_tools(self) -> list[Tool]:
+        self.check_image()
         root = self._make_root()
         try:
             with self._session(root, None) as session:
