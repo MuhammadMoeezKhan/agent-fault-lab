@@ -38,7 +38,13 @@ import subprocess
 from typing import Any, Callable, Optional
 
 from .audit import Fixture, ServerTarget
-from .observers import CompositeObserver, FilesystemObserver, GitObserver, SqliteObserver
+from .observers import (
+    AppendLogObserver,
+    CompositeObserver,
+    FilesystemObserver,
+    GitObserver,
+    SqliteObserver,
+)
 
 #: A fixed identity, so a commit does not fail for want of a user.name on a
 #: machine that has none.
@@ -87,6 +93,15 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             name=config.get("name", "git"),
             ignore=tuple(ignore) if ignore else None,
             ignore_empty_commits=bool(config.get("ignore_empty_commits", False)),
+        )
+    if kind == "append-log":
+        # The logs are named by the spec, never guessed, and so are the keys
+        # the audit commits to not measuring (preregistration 6.3).
+        return lambda root: AppendLogObserver(
+            os.path.join(root, config.get("path", "")),
+            patterns=tuple(config.get("patterns") or ("*.jsonl", "*.log")),
+            drop_keys=tuple(config.get("drop_keys") or ()),
+            name=config.get("name", "append-log"),
         )
     if kind == "composite":
         parts = [_observer_factory(part) for part in config.get("parts", [])]
