@@ -164,21 +164,76 @@ class EpisodeBudget:
         self.allow_hours = allow_hours
         self.enforce_hours = enforce_hours
 
-    def _load(self) -> dict[str, int]:
+    #: A day's entry is either a bare count, which is the old format, or
+    #: {"episodes": n, "refused_by_client": n}. DECISIONS.md Q25 (2026-10-27)
+    #: keeps the two apart: an episode the client refused ran no tool and
+    #: changed no backend, so it does not count against the cap, but it stays
+    #: in the record because thirty of them once looked like a finished batch.
+    def _load(self) -> dict[str, Any]:
         try:
             with open(self.path, encoding="utf-8") as handle:
                 data = json.load(handle)
-            return {str(k): int(v) for k, v in data.items()}
-        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        except (OSError, json.JSONDecodeError):
             return {}
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, Any] = {}
+        for key, value in data.items():
+            if key == "meta" and isinstance(value, dict):
+                out[key] = value
+            elif isinstance(value, dict):
+                out[key] = {
+                    "episodes": int(value.get("episodes", 0)),
+                    "refused_by_client": int(value.get("refused_by_client", 0)),
+                }
+            else:
+                try:
+                    out[key] = {"episodes": int(value), "refused_by_client": 0}
+                except (TypeError, ValueError):
+                    continue
+        return out
 
-    def _save(self, ledger: dict[str, int]) -> None:
+    def _save(self, ledger: dict[str, Any]) -> None:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as handle:
             json.dump(ledger, handle, indent=2, sort_keys=True)
 
+    def _day(self, ledger: dict[str, Any], day: str) -> dict[str, int]:
+        entry = ledger.get(day)
+        if not isinstance(entry, dict):
+            entry = {"episodes": 0, "refused_by_client": 0}
+            ledger[day] = entry
+        return entry
+
     def used_today(self) -> int:
-        return self._load().get(dt.date.today().isoformat(), 0)
+        entry = self._load().get(dt.date.today().isoformat())
+        return int(entry.get("episodes", 0)) if isinstance(entry, dict) else 0
+
+    def refusals_since(self, days: int = 7) -> list[str]:
+        """Timestamps of client refusals in the last `days`, newest last."""
+        meta = self._load().get("meta") or {}
+        cutoff = (dt.datetime.now() - dt.timedelta(days=days)).isoformat()
+        return [when for when in (meta.get("refusals") or []) if when >= cutoff]
+
+    def session_resets(self) -> list[str]:
+        """Local clock times, "HH:MM", when a session limit was seen to reset."""
+        meta = self._load().get("meta") or {}
+        return list(meta.get("session_resets") or [])
+
+    def record_refusal(self, when: Optional[dt.datetime] = None,
+                       resets_at: Optional[str] = None) -> None:
+        """A refused episode: counted apart, and remembered for the timing guard."""
+        ledger = self._load()
+        entry = self._day(ledger, dt.date.today().isoformat())
+        entry["refused_by_client"] = entry.get("refused_by_client", 0) + 1
+        meta = ledger.setdefault("meta", {})
+        refusals = meta.setdefault("refusals", [])
+        refusals.append((when or dt.datetime.now()).isoformat(timespec="seconds"))
+        if resets_at:
+            resets = meta.setdefault("session_resets", [])
+            if resets_at not in resets:
+                resets.append(resets_at)
+        self._save(ledger)
 
     def remaining_today(self) -> int:
         return max(0, self.daily_cap - self.used_today())
@@ -193,8 +248,48 @@ class EpisodeBudget:
             return hour >= start or hour < end
         return start <= hour < end
 
+    def minutes_to_reset(self, now: Optional[dt.datetime] = None) -> Optional[int]:
+        """Minutes until the next known session-limit reset, or None."""
+        resets = self.session_resets()
+        if not resets:
+            return None
+        now = now or dt.datetime.now()
+        best: Optional[int] = None
+        for text in resets:
+            try:
+                hour, minute = (int(part) for part in text.split(":"))
+            except (ValueError, TypeError):
+                continue
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target < now:
+                target += dt.timedelta(days=1)
+            minutes = int((target - now).total_seconds() // 60)
+            best = minutes if best is None else min(best, minutes)
+        return best
+
     def check(self, count: int) -> None:
         """Raise before anything runs if the plan would break the approval."""
+        # DECISIONS.md Q25 guard 2: never start within an hour of a known
+        # session reset. A session limit at midnight meant the shared
+        # subscription was already exhausted by his own interactive work, and
+        # protecting that is what the cap is for.
+        minutes = self.minutes_to_reset()
+        if minutes is not None and minutes <= 60:
+            raise BudgetError(
+                f"a session limit is known to reset in {minutes} minutes "
+                f"({', '.join(self.session_resets())}). The approval says not "
+                f"to start a batch within the hour before it, because hitting "
+                f"the limit means his own sessions are already using the "
+                f"subscription. Start after the reset."
+            )
+        # Guard 3: twice in a week is a pattern, not an accident.
+        recent = self.refusals_since(7)
+        if len(recent) >= 2:
+            raise BudgetError(
+                f"the client has refused {len(recent)} times in the last week "
+                f"({', '.join(recent[-3:])}). The approval says to stop and "
+                f"raise it in QUESTIONS.md rather than retry."
+            )
         if not self.in_window():
             start, end = self.allow_hours
             raise BudgetError(
@@ -211,8 +306,8 @@ class EpisodeBudget:
 
     def record(self, count: int = 1) -> None:
         ledger = self._load()
-        today = dt.date.today().isoformat()
-        ledger[today] = ledger.get(today, 0) + count
+        entry = self._day(ledger, dt.date.today().isoformat())
+        entry["episodes"] = entry.get("episodes", 0) + count
         self._save(ledger)
 
 
@@ -339,6 +434,76 @@ class ClaudeCodeAgent:
             + (", no skills" if disable_slash_commands else "")
             + ")"
         )
+
+    def preflight(self) -> str:
+        """Ask the client one trivial question before a batch starts.
+
+        DECISIONS.md Q25 guard 1. This is not an episode: no MCP server is
+        attached, no tool can be called, nothing is recorded in the ledger and
+        no row is produced. It exists to find out whether the client will
+        answer about the task or about itself, which cost thirty approved
+        episodes to discover the hard way on 2026-10-27.
+
+        Raises ClientRefused if the answer is about the client's availability.
+        Returns the reply, so a caller can log what normal looked like.
+        """
+        command = [
+            self.binary,
+            "-p",
+            "Reply with the single word OK.",
+            "--output-format",
+            "json",
+            "--model",
+            self.model,
+            "--max-turns",
+            "1",
+            "--strict-mcp-config",
+            "--settings",
+            "{}",
+            "--disallowed-tools",
+            " ".join(DENIED_BUILTINS),
+        ]
+        if self.disable_slash_commands:
+            command.append("--disable-slash-commands")
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=min(self.timeout_s, 120.0),
+                stdin=subprocess.DEVNULL,
+                env=self._env(),
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            raise ClientRefused(
+                f"the preflight question did not complete: {exc}. The batch is "
+                "not started, because a client that cannot answer one trivial "
+                "question will not produce episodes either."
+            ) from exc
+        raw = (completed.stdout or "").strip()
+        text = raw
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, list):
+                payload = payload[-1] if payload else {}
+            text = str(payload.get("result") or "")
+        except json.JSONDecodeError:
+            pass
+        lowered = text.lower()
+        if any(marker in lowered for marker in REFUSAL_MARKERS):
+            raise ClientRefused(
+                f"the preflight answer is about the client, not the question: "
+                f"{text[:200]!r}. The batch is not started, so no approved "
+                f"episodes are spent on it."
+            )
+        if not text.strip():
+            raise ClientRefused(
+                "the preflight question got an empty answer"
+                + (f": {(completed.stderr or '').strip()[:200]!r}"
+                   if completed.stderr else "")
+                + ". The batch is not started."
+            )
+        return text
 
     def _env(self) -> dict[str, str]:
         environment = {

@@ -8,6 +8,7 @@ audit from a spec file and is the command a tool author would put in CI.
 from __future__ import annotations
 
 import argparse
+import re
 import os
 import sys
 from typing import Optional, Sequence
@@ -320,6 +321,23 @@ def _build_agent(
     raise SystemExit(f"unknown agent {descriptor!r}; use ollama[:model] or claude[:model]")
 
 
+#: "resets 12:30am (America/Chicago)" -> "00:30", so the timing guard knows
+#: when not to start. Only the client's own wording is parsed; anything else
+#: leaves the guard with nothing, which is better than a wrong time.
+_RESET_PATTERN = re.compile(r"resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)", re.I)
+
+
+def _reset_time(message: str) -> Optional[str]:
+    match = _RESET_PATTERN.search(message)
+    if not match:
+        return None
+    hour = int(match.group(1)) % 12
+    minute = int(match.group(2) or 0)
+    if match.group(3).lower() == "pm":
+        hour += 12
+    return f"{hour:02d}:{minute:02d}"
+
+
 def _run_consequence(args: argparse.Namespace) -> int:
     from . import spec
     from .consequence import (
@@ -386,6 +404,25 @@ def _run_consequence(args: argparse.Namespace) -> int:
         for task in tasks:
             print(f"  {task.id}: target={task.target_tool}")
         return 0
+
+    # Q25 guard 1: one trivial question before any approved episode is spent.
+    # Not an episode, not in the ledger, and it costs nothing if the client is
+    # healthy. Thirty episodes were spent on a session-limit message before
+    # this existed.
+    if meters and hasattr(agent, "preflight"):
+        try:
+            reply = agent.preflight()
+        except ClientRefused as exc:
+            print(f"refusing to start: {exc}", file=sys.stderr)
+            if budget is not None:
+                budget.record_refusal(resets_at=_reset_time(str(exc)))
+            print(
+                "recorded as a client refusal, not as an episode. The "
+                "approval says to stop for the night rather than retry.",
+                file=sys.stderr,
+            )
+            return 4
+        print(f"preflight: {reply.strip()[:60]!r}")
 
     runner = ConsequenceRunner(target, budget=budget, trace_dir=args.trace_dir)
     results = []

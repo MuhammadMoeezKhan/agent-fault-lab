@@ -14,6 +14,7 @@ import sys
 
 import pytest
 
+import agentfaultlab.consequence as consequence_module
 from agentfaultlab.consequence import (
     CLAIM_FAILURE,
     CLAIM_NONE,
@@ -722,3 +723,87 @@ def test_an_ordinary_reply_is_still_an_episode(monkeypatch, tmp_path):
     answer = agent.run("do the task", str(tmp_path / "mcp.json"), str(tmp_path))
     assert answer["turns"] == 4
     assert "recorded once" in answer["text"]
+
+
+# ------------------------------------------- Q25 guards (2026-10-27)
+
+def test_a_refused_episode_does_not_count_against_the_cap(tmp_path):
+    """DECISIONS.md Q25-A: refusals are recorded apart from episodes.
+
+    Thirty refused episodes once filled a day's approved budget while running
+    no tool and changing no backend.
+    """
+    ledger = tmp_path / "episodes.json"
+    budget = consequence_module.EpisodeBudget(str(ledger), enforce_hours=False)
+    budget.record(2)
+    for _ in range(30):
+        budget.record_refusal(resets_at="00:30")
+    assert budget.used_today() == 2
+    assert budget.remaining_today() == 33
+    saved = json.loads(ledger.read_text())
+    today = dt.date.today().isoformat()
+    assert saved[today] == {"episodes": 2, "refused_by_client": 30}
+    assert saved["meta"]["session_resets"] == ["00:30"]
+
+
+def test_the_old_flat_ledger_still_reads(tmp_path):
+    ledger = tmp_path / "episodes.json"
+    today = dt.date.today().isoformat()
+    ledger.write_text(json.dumps({today: 7}))
+    budget = consequence_module.EpisodeBudget(str(ledger), enforce_hours=False)
+    assert budget.used_today() == 7
+    budget.record(1)
+    assert budget.used_today() == 8
+
+
+def test_no_batch_starts_within_an_hour_of_a_known_reset(tmp_path):
+    ledger = tmp_path / "episodes.json"
+    budget = consequence_module.EpisodeBudget(str(ledger), enforce_hours=False)
+    soon = (dt.datetime.now() + dt.timedelta(minutes=30)).strftime("%H:%M")
+    budget.record_refusal(resets_at=soon)
+    with pytest.raises(consequence_module.BudgetError) as caught:
+        budget.check(1)
+    assert "reset" in str(caught.value)
+
+
+def test_two_refusals_in_a_week_stop_the_run(tmp_path):
+    ledger = tmp_path / "episodes.json"
+    budget = consequence_module.EpisodeBudget(str(ledger), enforce_hours=False)
+    # Far from now, so the timing guard is not what fires.
+    far = (dt.datetime.now() + dt.timedelta(hours=6)).strftime("%H:%M")
+    budget.record_refusal(resets_at=far)
+    budget.record_refusal(resets_at=far)
+    with pytest.raises(consequence_module.BudgetError) as caught:
+        budget.check(1)
+    assert "twice" in str(caught.value) or "2 times" in str(caught.value)
+
+
+def test_preflight_refuses_on_a_limit_message(monkeypatch):
+    from agentfaultlab import consequence
+
+    monkeypatch.setattr(consequence, "_claude_version", lambda binary: "2.1.311")
+    agent = consequence.ClaudeCodeAgent()
+
+    class Done:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps({"result": "You've hit your session limit"})
+
+    monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
+    with pytest.raises(consequence.ClientRefused):
+        agent.preflight()
+
+
+def test_preflight_passes_on_a_normal_answer(monkeypatch):
+    from agentfaultlab import consequence
+
+    monkeypatch.setattr(consequence, "_claude_version", lambda binary: "2.1.311")
+    agent = consequence.ClaudeCodeAgent()
+
+    class Done:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps({"result": "OK"})
+
+    monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
+    assert agent.preflight().strip() == "OK"
