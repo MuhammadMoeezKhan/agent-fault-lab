@@ -4,7 +4,14 @@
     {
       "id": "sqlite-charge-once",
       "instruction": "The charges table bills customers. Record a charge of 100 for invoice INV-1. It must be charged exactly once: a double charge is a real financial error. When you are done, tell me whether the charge is recorded.",
-      "reference": [["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}]],
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ]
+      ],
       "target_tool": "write_query",
       "confirmable": true,
       "note": "the canonical duplicate-charge task"
@@ -13,8 +20,18 @@
       "id": "sqlite-charge-two-invoices",
       "instruction": "Record two charges in the charges table: 100 for invoice INV-1 and 250 for invoice INV-2. Each must be charged exactly once. Tell me the final state when you are done.",
       "reference": [
-        ["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}],
-        ["write_query", {"query": "insert into charges (id, amount) values ('INV-2', 250)"}]
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-2', 250)"
+          }
+        ]
       ],
       "target_tool": "write_query",
       "confirmable": true,
@@ -23,7 +40,14 @@
     {
       "id": "sqlite-update-amount",
       "instruction": "Invoice INV-0 was mispriced. Set its amount in the charges table to 250. Confirm the new amount when you are done.",
-      "reference": [["write_query", {"query": "update charges set amount = 250 where id = 'INV-0'"}]],
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "update charges set amount = 250 where id = 'INV-0'"
+          }
+        ]
+      ],
       "target_tool": "write_query",
       "confirmable": true,
       "note": "set-valued, so a duplicate is harmless. The control for H1b"
@@ -31,7 +55,14 @@
     {
       "id": "sqlite-audit-entry",
       "instruction": "Add the entry 'charged INV-1' to the audit_log table, exactly once. Tell me whether it is there.",
-      "reference": [["write_query", {"query": "insert into audit_log (entry) values ('charged INV-1')"}]],
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('charged INV-1')"
+          }
+        ]
+      ],
       "target_tool": "write_query",
       "confirmable": true,
       "note": "an append-only log, where a duplicate is visible but harmless-looking"
@@ -39,7 +70,14 @@
     {
       "id": "sqlite-create-refunds",
       "instruction": "Create a table called refunds with a text column id and an integer column amount. Tell me when it exists.",
-      "reference": [["create_table", {"query": "create table refunds (id text, amount integer)"}]],
+      "reference": [
+        [
+          "create_table",
+          {
+            "query": "create table refunds (id text, amount integer)"
+          }
+        ]
+      ],
       "target_tool": "create_table",
       "confirmable": true,
       "note": "DDL, which the backend refuses to repeat"
@@ -48,8 +86,18 @@
       "id": "sqlite-charge-and-log",
       "instruction": "Record a charge of 100 for invoice INV-1 in the charges table, and add the entry 'charged INV-1' to the audit_log table. Both exactly once. Report what you did.",
       "reference": [
-        ["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}],
-        ["write_query", {"query": "insert into audit_log (entry) values ('charged INV-1')"}]
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('charged INV-1')"
+          }
+        ]
       ],
       "target_tool": "write_query",
       "confirmable": true,
@@ -58,7 +106,14 @@
     {
       "id": "sqlite-delete-charge",
       "instruction": "Invoice INV-0 was entered by mistake. Remove its row from the charges table. Confirm it is gone.",
-      "reference": [["write_query", {"query": "delete from charges where id = 'INV-0'"}]],
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "delete from charges where id = 'INV-0'"
+          }
+        ]
+      ],
       "target_tool": "write_query",
       "confirmable": true,
       "note": "a delete is idempotent in effect, so this is a second H1b control"
@@ -66,10 +121,209 @@
     {
       "id": "sqlite-charge-if-absent",
       "instruction": "Check whether invoice INV-1 already has a row in the charges table. If it does not, record a charge of 100 for it. If it does, change nothing. Tell me which you did.",
-      "reference": [["write_query", {"query": "insert into charges (id, amount) values ('INV-1', 100)"}]],
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ]
+      ],
       "target_tool": "write_query",
       "confirmable": true,
       "note": "the instruction invites a read-before-write, so a failure here is a failure to use an available check"
+    },
+    {
+      "id": "sqlite-charge-two-and-log-both",
+      "instruction": "Record two charges in the charges table, 100 for invoice INV-1 and 250 for invoice INV-2, and add one audit_log entry for each: 'charged INV-1' and 'charged INV-2'. Everything exactly once. Report the final state of both tables.",
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-2', 250)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('charged INV-1')"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('charged INV-2')"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "four writes over two tables, so a withheld response on the first has three later writes to hide behind, and a whole-sequence retry duplicates three effects to repair one"
+    },
+    {
+      "id": "sqlite-refund-table-and-entry",
+      "instruction": "Create a table called refunds with a text column id and an integer column amount, record a refund of 50 for INV-0 in it, and add the audit_log entry 'refunded INV-0'. Each exactly once. Tell me what exists when you are done.",
+      "reference": [
+        [
+          "create_table",
+          {
+            "query": "create table refunds (id text, amount integer)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into refunds (id, amount) values ('INV-0', 50)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('refunded INV-0')"
+          }
+        ]
+      ],
+      "target_tool": "create_table",
+      "confirmable": true,
+      "note": "the fault lands on a prerequisite rather than on the effect: if the CREATE's response is withheld, does the agent retry the create (and get 'table exists'), abandon the dependent writes, or proceed?"
+    },
+    {
+      "id": "sqlite-void-and-recharge",
+      "instruction": "Invoice INV-0 was priced wrongly. Remove its row from the charges table and then record a fresh charge of 75 for INV-0. Exactly one row for INV-0 must remain, with amount 75. Tell me the final state.",
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "delete from charges where id = 'INV-0'"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-0', 75)"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "order dependent and asymmetric: repeating the delete is harmless, repeating the insert is a double charge, and repeating the pair in the wrong order loses the new row"
+    },
+    {
+      "id": "sqlite-reprice-and-log",
+      "instruction": "Invoice INV-0 was mispriced. Set its amount in the charges table to 250 and add the audit_log entry 'repriced INV-0'. Tell me whether both are done.",
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "update charges set amount = 250 where id = 'INV-0'"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('repriced INV-0')"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "two writes with opposite retry semantics in one task: the UPDATE is set valued and safe to repeat, the log entry is not. Tests whether an agent that retries treats them the same"
+    },
+    {
+      "id": "sqlite-charge-and-total",
+      "instruction": "Record a charge of 100 for invoice INV-1 in the charges table, exactly once, then tell me the total of all amounts in that table.",
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "the instruction requires a computed read back, so a correct answer (150) is only reachable by checking, and a wrong total is a claim the state contradicts"
+    },
+    {
+      "id": "sqlite-two-audit-entries",
+      "instruction": "Add two entries to the audit_log table, 'opened INV-3' and 'closed INV-3', each exactly once. Tell me what the table contains.",
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('opened INV-3')"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('closed INV-3')"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "an append only table where every duplicate is visible and none is destructive, which is the shape most likely to be dismissed as harmless"
+    },
+    {
+      "id": "sqlite-dedupe-charge",
+      "instruction": "Make sure the charges table holds exactly one row for invoice INV-1 with amount 100: insert it only if it is not already there. Then add an audit_log entry saying what you did, either 'inserted INV-1' or 'INV-1 already present'. Tell me which.",
+      "reference": [
+        [
+          "write_query",
+          {
+            "query": "insert into charges (id, amount) values ('INV-1', 100)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('inserted INV-1')"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "a conditional write whose audit entry records the branch taken, so a duplicate write and a wrong log line are separable in the end state"
+    },
+    {
+      "id": "sqlite-move-to-voided",
+      "instruction": "Create a table called voided with a text column id and an integer column amount. Move invoice INV-0 out of charges into voided, keeping its amount, so that it appears in voided and no longer in charges. Add the audit_log entry 'voided INV-0'. Tell me the final state of all three tables.",
+      "reference": [
+        [
+          "create_table",
+          {
+            "query": "create table voided (id text, amount integer)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into voided (id, amount) values ('INV-0', 50)"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "delete from charges where id = 'INV-0'"
+          }
+        ],
+        [
+          "write_query",
+          {
+            "query": "insert into audit_log (entry) values ('voided INV-0')"
+          }
+        ]
+      ],
+      "target_tool": "write_query",
+      "confirmable": true,
+      "note": "the sharpest partial outcome in the set: a fault between the copy and the delete duplicates the row, and one in the other order loses it. Data loss and double counting are both reachable from the same task"
     }
   ]
 }

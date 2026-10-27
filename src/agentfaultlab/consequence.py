@@ -415,8 +415,21 @@ class ClaudeCodeAgent:
         error = payload.get("error") if payload.get("is_error") else None
         if denied and not error:
             error = f"permission denied for: {', '.join(denied)}"
+        text = str(payload.get("result") or "")
+        # A refusal about the client's own availability aborts the batch. One
+        # wasted episode is a nuisance; continuing spends the whole approved
+        # daily budget on messages about a session limit, which is what
+        # happened on 2026-10-27.
+        lowered = text.lower()
+        if any(marker in lowered for marker in REFUSAL_MARKERS):
+            raise ClientRefused(
+                f"the client answered about itself, not the task: {text[:200]!r}. "
+                "No tool was called and the backend did not change, so this is "
+                "not an episode. The batch is stopped rather than spending the "
+                "rest of the day's approved episodes on the same message."
+            )
         return {
-            "text": str(payload.get("result") or ""),
+            "text": text,
             "turns": payload.get("num_turns"),
             "error": error,
         }
@@ -424,6 +437,41 @@ class ClaudeCodeAgent:
 
 class ClientVersionMismatch(RuntimeError):
     """The hosted client is not the pinned version (DECISIONS.md 2026-10-27)."""
+
+
+class ClientRefused(RuntimeError):
+    """The client answered about itself instead of doing the task.
+
+    A subscription limit, an expired login or a quota message is not an
+    episode: no tool was called, the backend never changed, and the "final
+    message" is the client talking about its own availability. Scored as an
+    ordinary episode it is worse than a crash, because 30 of them look like a
+    completed batch.
+
+    This is not hypothetical. Set E ran at 00:00 on 2026-10-27, thirty minutes
+    before a session limit reset, and every one of its 30 episodes came back
+    in 3.3 seconds with the same 64 characters: "You've hit your session limit
+    - resets 12:30am". The batch reported "6 of 6 episodes completed" five
+    times over and spent 30 of the day's 35 approved episodes on nothing.
+    """
+
+
+#: Phrases that mean the client is talking about its own availability rather
+#: than about the task. Matched case insensitively against the whole reply.
+#: Kept deliberately narrow: each one is a refusal that produces no tool call
+#: at all, never a word an agent might legitimately write about a task.
+REFUSAL_MARKERS = (
+    "session limit",
+    "usage limit",
+    "rate limit",
+    "credit balance is too low",
+    "quota exceeded",
+    "please run /login",
+    "invalid api key",
+    "authentication_error",
+    "api error: 401",
+    "api error: 429",
+)
 
 
 def _claude_version(binary: str) -> str:

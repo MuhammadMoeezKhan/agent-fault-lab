@@ -576,13 +576,43 @@ def build_frames(
     # Frame 3: a seeded draw from the runnable population. Seeded on the
     # snapshot's own fetch time plus the given seed, so re-running against a
     # newer snapshot cannot silently reuse an old draw.
+    #
+    # The draw is taken in **blocks**, and the reason is worth stating because
+    # the obvious alternative is wrong. `random.sample(pool, k)` is not
+    # prefix-stable: sample(pool, 150) does not begin with sample(pool, 40),
+    # because the algorithm switches strategy with k. So asking for a larger
+    # draw later would silently reorder the frame, and a study that had
+    # already audited the first few candidates would look as though it had
+    # picked them. Each block instead draws from the pool with every earlier
+    # block removed, under the same seed, which extends the order without
+    # touching it. Anyone with the snapshot, the seed and the block sizes
+    # reproduces exactly the same sequence.
     rng = random.Random(f"{seed}:{header.get('fetched_at', '')}")
     pool = sorted(runnable, key=lambda row: row["name"])
-    random_draw = rng.sample(pool, min(draw, len(pool)))
+    blocks = [int(size) for size in str(draw).split(",") if str(size).strip()]
+    random_draw: list[dict[str, Any]] = []
+    block_names: list[list[str]] = []
+    remaining = list(pool)
+    for size in blocks:
+        chosen = rng.sample(remaining, min(size, len(remaining)))
+        block_names.append([row["name"] for row in chosen])
+        random_draw.extend(chosen)
+        taken = {row["name"] for row in chosen}
+        remaining = [row for row in remaining if row["name"] not in taken]
 
     _write_csv(os.path.join(out_dir, "frame1-reference.csv"), reference)
-    _write_csv(os.path.join(out_dir, "frame2-popular.csv"), popular[: max(draw, 40)])
+    _write_csv(
+        os.path.join(out_dir, "frame2-popular.csv"),
+        popular[: max(sum(blocks), 40)],
+    )
     _write_csv(os.path.join(out_dir, "frame3-random.csv"), random_draw)
+    for index, names in enumerate(block_names, start=1):
+        if index == 1:
+            continue
+        _write_csv(
+            os.path.join(out_dir, f"frame3-random-block{index}.csv"),
+            [row for row in random_draw if row["name"] in set(names)],
+        )
 
     reasons: dict[str, int] = {}
     for row in rows:
@@ -625,7 +655,8 @@ def build_frames(
         "vanity packages with a few hundred weekly downloads are present. A "
         "study that samples the ecosystem from the registry alone misses the "
         "most used servers in it. Frame 1 is therefore a hardcoded list.",
-        f"- Frame 3 draw: {len(random_draw)}",
+        f"- Frame 3 draw: {len(random_draw)} in blocks of "
+        + ", ".join(str(len(names)) for names in block_names),
         "",
         "## Why servers were excluded",
         "",
@@ -692,7 +723,16 @@ def main() -> int:
     frames.add_argument("snapshot")
     frames.add_argument("--out", default="research/frames")
     frames.add_argument("--seed", type=int, default=20261019)
-    frames.add_argument("--draw", type=int, default=40)
+    frames.add_argument(
+        "--draw",
+        default="40",
+        help=(
+            "Frame 3 draw size, or comma separated block sizes such as "
+            "40,110. Each block is drawn from the pool with the earlier "
+            "blocks removed, under the same seed, so a later block extends "
+            "the frame order instead of reshuffling it"
+        ),
+    )
     frames.add_argument(
         "--allow-truncated",
         action="store_true",

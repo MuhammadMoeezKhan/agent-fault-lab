@@ -343,7 +343,7 @@ def _run_consequence(args: argparse.Namespace) -> int:
             taxonomy.get(condition)
 
     planned = len(tasks) * len(conditions) * len(arms) * args.repeats
-    from .consequence import ClientVersionMismatch
+    from .consequence import ClientRefused, ClientVersionMismatch
 
     try:
         agent = _build_agent(
@@ -394,9 +394,21 @@ def _run_consequence(args: argparse.Namespace) -> int:
             fault = None if condition == "clean" else f"{condition}:{task.target_tool}@1"
             for arm in arms:
                 for _ in range(args.repeats):
-                    result = runner.run_episode(
-                        task, agent, condition=condition, fault=fault, arm=arm
-                    )
+                    try:
+                        result = runner.run_episode(
+                            task, agent, condition=condition, fault=fault,
+                            arm=arm,
+                        )
+                    except ClientRefused as exc:
+                        print(f"\nstopping the batch: {exc}", file=sys.stderr)
+                        if results:
+                            print(
+                                f"{len(results)} episode(s) ran before this "
+                                "one; they are kept, and the refused episode "
+                                "is not counted as one.",
+                                file=sys.stderr,
+                            )
+                        return 4
                     results.append(result)
                     flag = "ERR" if result.error else ""
                     if args.blind:

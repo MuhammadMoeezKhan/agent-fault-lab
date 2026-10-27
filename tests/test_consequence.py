@@ -669,3 +669,56 @@ def test_a_pinned_client_refuses_a_different_version(monkeypatch):
     agent = consequence.ClaudeCodeAgent(expect_version="2.1.311")
     assert agent.version == "2.1.311"
     assert "2.1.311" in agent.name
+
+
+def test_a_client_refusal_is_not_an_episode(monkeypatch, tmp_path):
+    """A session limit is the client talking about itself, not a result.
+
+    Set E's 30 episodes all came back in 3.3 seconds with "You've hit your
+    session limit", were scored as completed, and spent the day's whole
+    approved budget. One refusal now stops the batch.
+    """
+    from agentfaultlab import consequence
+
+    monkeypatch.setattr(consequence, "_claude_version", lambda binary: "2.1.311")
+    agent = consequence.ClaudeCodeAgent()
+
+    class Done:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps(
+            {
+                "result": "You've hit your session limit · resets 12:30am "
+                          "(America/Chicago)",
+                "num_turns": 1,
+            }
+        )
+
+    monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
+    with pytest.raises(consequence.ClientRefused) as caught:
+        agent.run("do the task", str(tmp_path / "mcp.json"), str(tmp_path))
+    assert "session limit" in str(caught.value)
+
+
+def test_an_ordinary_reply_is_still_an_episode(monkeypatch, tmp_path):
+    """The markers must not catch a word an agent might legitimately write."""
+    from agentfaultlab import consequence
+
+    monkeypatch.setattr(consequence, "_claude_version", lambda binary: "2.1.311")
+    agent = consequence.ClaudeCodeAgent()
+
+    class Done:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps(
+            {
+                "result": "The charge is recorded once. I checked the row "
+                          "limit on the table first.",
+                "num_turns": 4,
+            }
+        )
+
+    monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
+    answer = agent.run("do the task", str(tmp_path / "mcp.json"), str(tmp_path))
+    assert answer["turns"] == 4
+    assert "recorded once" in answer["text"]
