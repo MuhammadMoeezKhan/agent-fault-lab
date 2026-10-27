@@ -649,3 +649,23 @@ def test_an_opening_that_commits_to_a_state_still_wins():
         "output and I had to retry it."
     )
     assert parse_claim(message) == CLAIM_SUCCESS
+
+
+def test_a_pinned_client_refuses_a_different_version(monkeypatch):
+    """An unpinned client is an unrecorded independent variable.
+
+    It updated itself between two batches of one experiment and the baseline
+    arm's repair rate moved, so a mismatch stops the batch rather than being
+    recorded in a label nobody reads until afterwards.
+    """
+    from agentfaultlab import consequence
+
+    monkeypatch.setattr(consequence, "_claude_version", lambda binary: "2.1.311")
+    with pytest.raises(consequence.ClientVersionMismatch) as caught:
+        consequence.ClaudeCodeAgent(expect_version="2.1.310")
+    assert "2.1.311" in str(caught.value)
+    assert "2.1.310" in str(caught.value)
+    # The matching case builds, and records what it measured.
+    agent = consequence.ClaudeCodeAgent(expect_version="2.1.311")
+    assert agent.version == "2.1.311"
+    assert "2.1.311" in agent.name

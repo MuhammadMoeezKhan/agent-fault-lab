@@ -281,6 +281,7 @@ class ClaudeCodeAgent:
         tool_timeout_ms: int = 20000,
         config_dir: Optional[str] = None,
         disable_slash_commands: bool = False,
+        expect_version: Optional[str] = None,
     ) -> None:
         self.model = model
         #: DECISIONS.md Q22-A: the main run passes this, so the measured
@@ -315,6 +316,22 @@ class ClaudeCodeAgent:
         # reportable.
         self.tool_timeout_ms = tool_timeout_ms
         self.version = _claude_version(binary)
+        #: DECISIONS.md 2026-10-27: the measured client is pinned from set E
+        #: onward, not only for the main run. The client updated itself
+        #: between two batches of the same experiment (2.1.310 to 2.1.311),
+        #: the second batch's baseline arm repaired less often, and nothing
+        #: warned me: the change was discovered afterwards in the version this
+        #: label records. An unpinned client is an unrecorded independent
+        #: variable, so a mismatch stops the batch rather than labelling it.
+        if expect_version and self.version != expect_version:
+            raise ClientVersionMismatch(
+                f"the measured client is {self.version}, not the pinned "
+                f"{expect_version}. Either pin the version this run should "
+                f"use, or decide deliberately to report a new one: a client "
+                f"that changes between batches of one experiment is an "
+                f"unrecorded variable, and the last change moved a result."
+            )
+        self.expect_version = expect_version
         self.name = (
             f"claude-code {self.version} (model {model}, "
             f"tool timeout {tool_timeout_ms}ms"
@@ -403,6 +420,10 @@ class ClaudeCodeAgent:
             "turns": payload.get("num_turns"),
             "error": error,
         }
+
+
+class ClientVersionMismatch(RuntimeError):
+    """The hosted client is not the pinned version (DECISIONS.md 2026-10-27)."""
 
 
 def _claude_version(binary: str) -> str:

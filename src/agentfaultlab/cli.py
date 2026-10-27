@@ -152,6 +152,16 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         help="where the daily episode budget is tracked",
     )
     parser.add_argument(
+        "--client-version",
+        metavar="VERSION",
+        help=(
+            "refuse to run unless the hosted client reports exactly this "
+            "version (DECISIONS.md 2026-10-27). An unpinned client is an "
+            "unrecorded independent variable: it updated itself between two "
+            "batches of one experiment and moved a result"
+        ),
+    )
+    parser.add_argument(
         "--blind",
         action="store_true",
         help=(
@@ -284,6 +294,7 @@ def _build_agent(
     timeout_s: float = 300.0,
     config_dir: Optional[str] = None,
     disable_slash_commands: bool = False,
+    expect_version: Optional[str] = None,
 ):
     """`ollama`, `ollama:qwen3:8b`, `claude`, or `claude:sonnet`."""
     kind, _, model = descriptor.partition(":")
@@ -304,6 +315,7 @@ def _build_agent(
             model=model or "sonnet",
             config_dir=config_dir,
             disable_slash_commands=disable_slash_commands,
+            expect_version=expect_version,
         )
     raise SystemExit(f"unknown agent {descriptor!r}; use ollama[:model] or claude[:model]")
 
@@ -331,12 +343,19 @@ def _run_consequence(args: argparse.Namespace) -> int:
             taxonomy.get(condition)
 
     planned = len(tasks) * len(conditions) * len(arms) * args.repeats
-    agent = _build_agent(
-        args.agent,
-        timeout_s=args.agent_timeout,
-        config_dir=args.config_dir,
-        disable_slash_commands=args.disable_slash_commands,
-    )
+    from .consequence import ClientVersionMismatch
+
+    try:
+        agent = _build_agent(
+            args.agent,
+            timeout_s=args.agent_timeout,
+            config_dir=args.config_dir,
+            disable_slash_commands=args.disable_slash_commands,
+            expect_version=args.client_version,
+        )
+    except ClientVersionMismatch as exc:
+        print(f"refusing to start: {exc}", file=sys.stderr)
+        return 3
     # Only the subscription arm draws on a rate limit that is shared with his
     # own interactive work, so only that arm is metered.
     meters = args.agent.split(":")[0].lower() in ("claude", "claude-code")
