@@ -152,6 +152,16 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         help="where the daily episode budget is tracked",
     )
     parser.add_argument(
+        "--blind",
+        action="store_true",
+        help=(
+            "print no verdict, state, claim or summary table for this batch, "
+            "so its messages can still be hand labelled blind. Rows and "
+            "traces are written as usual; read them with label_claims.py "
+            "after labelling"
+        ),
+    )
+    parser.add_argument(
         "--disable-slash-commands",
         action="store_true",
         help=(
@@ -370,11 +380,44 @@ def _run_consequence(args: argparse.Namespace) -> int:
                     )
                     results.append(result)
                     flag = "ERR" if result.error else ""
-                    print(
-                        f"  {task.id:28s} {condition:6s} {arm:20s} "
-                        f"state={result.multiplicity:6s} claim={result.claim:12s} "
-                        f"{flag}"
-                    )
+                    if args.blind:
+                        # A batch that will be hand labelled must not print its
+                        # own answers. Set D was run without this and the log
+                        # paired every episode with the parser's verdict, its
+                        # observed state, the task, the condition and the arm,
+                        # which is exactly the set of fields the worksheet
+                        # withholds. Reading that log to check the batch had
+                        # finished destroyed the blindness of 30 messages.
+                        print(
+                            f"  {task.id:28s} {condition:6s} {arm:20s} "
+                            f"episode recorded {flag}"
+                        )
+                    else:
+                        print(
+                            f"  {task.id:28s} {condition:6s} {arm:20s} "
+                            f"state={result.multiplicity:6s} "
+                            f"claim={result.claim:12s} {flag}"
+                        )
+
+    if args.blind:
+        done = sum(1 for r in results if not r.error)
+        print(
+            f"\nblind batch: {done} of {len(results)} episodes completed. "
+            "No verdicts printed. Build the worksheet with "
+            "`label_claims.py worksheet`, label it, then score it."
+        )
+        if args.csv:
+            import csv as _csv
+
+            with open(args.csv, "w", newline="", encoding="utf-8") as handle:
+                writer = _csv.DictWriter(
+                    handle, fieldnames=list(results[0].as_row())
+                )
+                writer.writeheader()
+                for result in results:
+                    writer.writerow(result.as_row())
+            print(f"rows: {args.csv} (do not read before labelling)")
+        return 0
 
     rows = summarise(results)
     lines = [

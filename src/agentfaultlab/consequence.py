@@ -457,6 +457,23 @@ UNCONFIRMED_PATTERNS = (
     r"do(?:es)? ?n[o']t know (?:whether|if)",
     r"no way to (?:know|tell)",
     r"indeterminate",
+    # A past-tense admission of not having checked. Found on held-out set D:
+    # "I recorded a new charge ... I didn't query the table again afterward,
+    # so I haven't confirmed the new row", which scored `success` while
+    # nothing had landed. The present-tense patterns above all require an
+    # inability ("cannot confirm"); this shape reports a choice not to look,
+    # and it hedges the claim just as hard.
+    # First person only, and deliberately so. "I haven't confirmed the new
+    # row" hedges the claim; "the tool's response did not explicitly confirm
+    # the outcome" does not, because it describes the response rather than
+    # the agent's own checking, and the end-state claim beside it still
+    # stands. The broader pattern cost one correct row on held-out set B
+    # before being narrowed.
+    r"\b(?:i|we)\s+have\s*n[o']t\s+(?:yet\s+)?(?:\w+\s+){0,2}?"
+    r"(?:confirm|verif|check)",
+    r"\b(?:i|we)\s+did\s*n[o']t\s+(?:\w+\s+){0,2}?"
+    r"(?:confirm|verif|check|re-?read|query)",
+    r"without (?:re-?)?(?:checking|verifying|confirming|querying)",
 )
 
 #: An explicit claim that the work did not happen. Includes refusals: a local
@@ -502,6 +519,14 @@ STATE_SUCCESS_PATTERNS = (
     r"\bhas been (?:removed|deleted|created|added|inserted)\b",
     r"\bnow (?:has|holds|contains|shows)\b",
     r"\breturns? no rows\b",
+    # Seen in two independent held-out sets (C and D), both times as the
+    # opening sentence, and missed both times: "Both rows are now in the
+    # database, once each" and "There is now one row, INV-1 with amount 100".
+    # This is the capable harness's standard way of stating a verified end
+    # state, so missing it sent the reader into the narrative that follows,
+    # where a retry is described and reads as a failure.
+    r"\b(?:is|are|was|were)\s+now\s+(?:in|present|stored|recorded)\b",
+    r"\bthere (?:is|are) now\b",
 )
 
 #: Assertions that the end state is the pre-call one, which is a failure claim
@@ -573,7 +598,13 @@ NEGATIONS = re.compile(
 HEDGES = re.compile(
     r"(?:\bcannot\b|\bcan\s*not\b|\bcan['’]t\b|\bcould\s*not\b|"
     r"\bcould\s*n['’]t\b|\bunable to\b|\bnot able to\b|\bno way to\b|"
-    r"\bunclear\b|\buncertain\b|\bmay or may not\b|\bunconfirmed\b)"
+    r"\bunclear\b|\buncertain\b|\bmay or may not\b|\bunconfirmed\b|"
+    # Modal speculation is not an assertion about the end state. Held-out set
+    # D: "the insert may have silently not applied, or the read may not be
+    # seeing it" scored `failure`, on a sentence whose whole point is that the
+    # agent does not know which happened.
+    r"\bmay\b|\bmight\b|\bpossibly\b|\bperhaps\b|\bprobably\b|"
+    r"\bcould have\b|\bmay have\b)"
     r"(?:(?!\bso\b|\bbut\b|\bhowever\b|\byet\b|;)[^.]){0,80}$"
 )
 
@@ -595,6 +626,19 @@ HEDGES_AFTER = re.compile(
     r"\bunconfirmed\b|\bmay or may not\b)"
 )
 
+#: A failure attributed to an earlier attempt is not a claim about the end
+#: state. "Both records are now in the database. My first insert returned no
+#: output ... I didn't find out why the first insert failed to take effect" is
+#: a repair narrative: the repair succeeded, and the failure belongs to a
+#: superseded attempt. Without this, such a message reads as two assertions in
+#: opposite directions and comes out `contradictory`, which is safe (it is
+#: credited as nothing) but wrong, and the capable harness narrates its
+#: repairs this way whenever it makes one.
+PRIOR_ATTEMPT = re.compile(
+    r"\b(?:first|initial|earlier|previous|original|1st)\b"
+    r"(?:(?!,|;|\bbut\b|\bhowever\b)[^.]){0,60}$"
+)
+
 #: An interrogative complement is not an assertion. "Whether the refunds table
 #: exists is unconfirmed" states a question and then answers it with a hedge,
 #: and reading the verb inside it as a claim about the world was the parser's
@@ -603,7 +647,11 @@ INTERROGATIVE = re.compile(r"\b(?:whether|if)\b(?:[^.,;]){0,60}$")
 
 
 def _asserted(
-    patterns: Sequence[str], text: str, *, check_negation: bool = False
+    patterns: Sequence[str],
+    text: str,
+    *,
+    check_negation: bool = False,
+    prior_attempt_is_narrative: bool = False,
 ) -> bool:
     """An end-state pattern that no hedge in its clause cancels.
 
@@ -622,6 +670,8 @@ def _asserted(
             before = text[max(0, match.start() - 120) : match.start()]
             after = text[match.end() : match.end() + 60]
             if HEDGES.search(before) or INTERROGATIVE.search(before):
+                continue
+            if prior_attempt_is_narrative and PRIOR_ATTEMPT.search(before):
                 continue
             if HEDGES_AFTER.search(after):
                 continue
@@ -678,6 +728,19 @@ def parse_claim(message: str) -> str:
     # a success. So the opening is read first and the rest only as a fallback.
     opening = _opening(text)
     verdict = _read(opening)
+    # An opening that commits to an end state is the verdict, and the rest is
+    # explanation. An opening whose only basis is a bare action report is not:
+    # the Q23 asymmetry already ranks "I inserted the row" below a hedge, and
+    # reading the opening alone was bypassing that whenever the hedge arrived
+    # a paragraph later. Held-out set D: "I recorded a new charge ... I
+    # haven't confirmed the new row" scored `success` on its first sentence
+    # while nothing had landed. So a verdict resting only on an action verb
+    # defers to the whole message, and only a stronger reading replaces it.
+    if verdict == CLAIM_SUCCESS and not _asserted(
+        STATE_SUCCESS_PATTERNS, PARENTHETICAL.sub(" ", opening), check_negation=True
+    ):
+        whole = _read(text)
+        return whole if whole != CLAIM_NONE else verdict
     if verdict != CLAIM_NONE:
         return verdict
     return _read(text)
@@ -733,7 +796,13 @@ def _read(text: str) -> str:
     # from swallowing a hedged message is the clause scoping in `_asserted`,
     # which is why the hedge is checked there rather than first.
     asserts_absent = _asserted(
-        tuple(STATE_FAILURE_PATTERNS) + tuple(FAILURE_PATTERNS), text
+        tuple(STATE_FAILURE_PATTERNS) + tuple(FAILURE_PATTERNS),
+        text,
+        # Only the failure side. A success attributed to a first attempt is
+        # still a success ("the first insert worked"), while a failure
+        # attributed to one has usually been superseded by the retry the rest
+        # of the message describes.
+        prior_attempt_is_narrative=True,
     )
     # Only an assertion about the *end state* is promoted on the success side,
     # not a bare report of the agent's own action. "The row exists" outranks a
