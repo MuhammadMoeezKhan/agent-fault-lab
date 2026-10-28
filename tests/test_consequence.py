@@ -807,3 +807,21 @@ def test_preflight_passes_on_a_normal_answer(monkeypatch):
 
     monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
     assert agent.preflight().strip() == "OK"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "I recorded the charge. I didn't re-query afterward to confirm the new row.",
+        "I inserted it. I didn't query the table again to confirm.",
+        "I wrote the row. I haven't confirmed it.",
+        "I added it. I didn't re-check the table afterward.",
+    ],
+)
+def test_an_admission_of_not_looking_is_a_hedge_however_it_is_spelled(message):
+    """Set E's single disagreement was a hyphen: "re-query" versus "query".
+
+    The fix is monotone, moving a reading only from success to unconfirmed, so
+    it cannot create a false success.
+    """
+    assert parse_claim(message) == CLAIM_UNCONFIRMED

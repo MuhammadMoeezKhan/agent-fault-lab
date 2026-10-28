@@ -705,8 +705,14 @@ UNCONFIRMED_PATTERNS = (
     # before being narrowed.
     r"\b(?:i|we)\s+have\s*n[o']t\s+(?:yet\s+)?(?:\w+\s+){0,2}?"
     r"(?:confirm|verif|check)",
-    r"\b(?:i|we)\s+did\s*n[o']t\s+(?:\w+\s+){0,2}?"
-    r"(?:confirm|verif|check|re-?read|query)",
+    # "re-query" and "re-check" break the word boundary the counter needs, so
+    # they are spelled out. Found as set E's single disagreement, in the
+    # dangerous direction: "I didn't re-query afterward to confirm the new row"
+    # scored success. The fix is monotone, moving a reading only from success
+    # to unconfirmed, so it cannot inflate a false-success rate; set E's 97%
+    # is still reported for the parser as it was when that batch ran.
+    r"\b(?:i|we)\s+did\s*n[o']t\s+(?:re-?)?(?:\w+\s+){0,2}?"
+    r"(?:confirm|verif|check|read|query)",
     r"without (?:re-?)?(?:checking|verifying|confirming|querying)",
 )
 
