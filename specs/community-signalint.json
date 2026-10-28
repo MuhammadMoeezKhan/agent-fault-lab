@@ -1,0 +1,102 @@
+{
+  "server": {
+    "name": "community-signalint",
+    "command": [
+      "npx",
+      "-y",
+      "signalint-mcp"
+    ],
+    "container_command": [
+      "signalint-mcp"
+    ],
+    "version": "signalint-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. All 13 tools declare readOnlyHint, destructiveHint, idempotentHint and openWorldHint, which is the fully annotated case the audit can test a claim against rather than measure a gap in. Two tools declare readOnlyHint false: apply_diagnostic_fix (destructiveHint true, idempotentHint false) and discard_diagnostic_fix (destructiveHint false, idempotentHint true). It keeps no state under HOME; the effect is the patched file in the working tree.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "name": "tree",
+          "path": "repo",
+          "ignore": [
+            ".git",
+            ".git/*",
+            ".signalint",
+            ".signalint/*",
+            ".DS_Store"
+          ],
+          "note": "the effect under test: the patched file in the working tree. The ignore list is globs, and giving one replaces the observer's defaults, so each directory is named twice: once for the entry and once for everything under it. `.git` is ignored because the seed commit's sha differs between replays (the harness does not fix GIT_AUTHOR_DATE) and the audited tool writes nothing there. `.signalint` is excluded from this part because it holds a sqlite file, and is measured as rows by the part below rather than dropped."
+        },
+        {
+          "kind": "sqlite",
+          "name": "cache",
+          "path": "repo/.signalint/cache.sqlite",
+          "tables": [
+            "cache",
+            "engine_state"
+          ],
+          "ignore_columns": [
+            "timestamp"
+          ],
+          "note": "the server's own cache, measured by its rows rather than its bytes. Both tables carry a wall clock `timestamp`, which is the only declared drop; `key`, `result`, `engine` and `config_hash` are all still measured, so a repeat that wrote a cache row still shows. Observing the file byte-wise instead would make every run differ and the fixture unprovable, and excluding it outright would hide a durable effect."
+        }
+      ]
+    },
+    "note_observer": "The audited tool rewrites a file in place and, as a side effect, creates a sqlite cache inside the repository. A plain filesystem observer over both reads UNPROVEN, because two identical clean runs leave byte-different sqlite files. The composite splits them: the tree is compared as files, the cache as rows with its timestamp column dropped (preregistration 6.3).",
+    "note_prelude": "The audited tool takes a transactionId that preview_diagnostic_fix mints, and that id is random per call, so it cannot be written into this file. The fixture prelude captures it from the prepare call's reply and the fixture refers to it as {tx}. preview_diagnostic_fix declares readOnlyHint true and writes nothing to disk, so using it as a prelude neither takes the fault nor changes the baseline.",
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "git": {
+        "path": "repo",
+        "untracked": {
+          "src/app.py": "def charge(amount):\n    return amount\n"
+        }
+      },
+      "files": {
+        "repo/README.md": "seed\n"
+      }
+    },
+    "timeout_s": 120.0
+  },
+  "fixtures": [
+    {
+      "tool": "apply_diagnostic_fix",
+      "id": "apply_prepared_patch",
+      "prelude": [
+        [
+          "preview_diagnostic_fix",
+          {
+            "patches": [
+              {
+                "file": "{root}/repo/src/app.py",
+                "originalContent": "def charge(amount):\n    return amount\n",
+                "patchedContent": "def charge(amount):\n    return round(amount, 2)\n",
+                "description": "round the amount"
+              }
+            ]
+          },
+          {
+            "tx": "transactionId"
+          }
+        ]
+      ],
+      "arguments": {
+        "transactionId": "{tx}",
+        "confirm": true
+      },
+      "note": "The prepare-then-commit shape. The commit declares idempotentHint false, so the declaration says a repeat is not safe; the trial finds out whether the server consumes the token on first use, which would make the repeat safe whatever the annotation says. This is the first fixture in the study whose argument is a server-minted token rather than a caller-chosen key, and the only mechanism in the sample that could make a retry safe without the caller supplying a key.",
+      "probes": [
+        [
+          "get_diagnostic_snapshot",
+          {}
+        ]
+      ]
+    }
+  ]
+}
