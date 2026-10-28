@@ -3,7 +3,7 @@
     "name": "community-desktop-commander",
     "command": ["npx", "-y", "@wonderwhy-er/desktop-commander"],
     "version": "desktop-commander 0.3.x (npx latest at run time)",
-    "note": "The most downloaded locally runnable server in the registry frame (about 196k weekly npm downloads). It declares readOnlyHint on all 25 tools and idempotentHint on none, so a client has nothing to decide a retry with. HOME moves into the trial root because the server writes a call log and its config under ~/.claude-server-commander.",
+    "note": "Drawn from the registry frame (about 196k weekly npm downloads at draw time). It declares readOnlyHint on all 25 tools and idempotentHint on none. HOME moves into the trial root because the server writes a call log and its config under ~/.claude-server-commander.",
     "env": {
       "HOME": "{root}/home",
       "npm_config_cache": "{home}/.npm",
@@ -72,7 +72,7 @@
       "probes": [
         ["list_directory", {"path": "{root}/work"}]
       ],
-      "note": "documented as 'create or ensure exists', which is a claim of idempotence made in prose and nowhere in the annotations"
+      "note": "documented as 'create or ensure exists' in prose, with no idempotentHint in the annotations: the fixture exercises the tool that prose describes"
     }
   ]
 }

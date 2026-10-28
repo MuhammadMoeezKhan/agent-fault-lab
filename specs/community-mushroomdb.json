@@ -9,7 +9,7 @@
       "{root}/db"
     ],
     "version": "mushroomdb 0.9.x (npx latest at run time)",
-    "note": "An embedded graph database. Its registry entry is one of the few that declares the arguments needed to start it (mcp plus a required database directory), so the store is inside the trial root by construction. Twenty three tools, none of them annotated.",
+    "note": "An embedded graph database. Its registry entry declares the arguments needed to start it (mcp plus a required database directory), so the store is inside the trial root by construction. Twenty three tools, none of them annotated.",
     "env": {
       "HOME": "{root}/home",
       "npm_config_cache": "{home}/.npm",

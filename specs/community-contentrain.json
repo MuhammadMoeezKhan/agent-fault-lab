@@ -7,7 +7,7 @@
       "@contentrain/mcp"
     ],
     "version": "@contentrain/mcp 1.x (npx latest at run time)",
-    "note": "The best annotated server in the sample: all 22 tools declare readOnlyHint and all 15 mutating ones declare idempotentHint, so the annotations are claims that can be tested rather than gaps. Every write is auto-committed to git, which also makes the effect observable canonically (commit subjects and trees, no hashes). The fixture repository is the trial root itself, because this server works on its working directory: pointing it at a subdirectory while the process ran elsewhere made it initialise itself in whatever directory the harness was started from.",
+    "note": "All 22 tools declare readOnlyHint and all 15 mutating ones declare idempotentHint, so every fixture here has a declaration to exercise. Writes are auto-committed to git, so the effect is read from commit subjects and trees rather than hashes. The fixture repository is the trial root itself: this server works on its working directory, so pointing it at a subdirectory while the process runs elsewhere does not keep its state inside the mount.",
     "env": {
       "HOME": "{root}/home",
       "npm_config_cache": "{home}/.npm",
@@ -22,7 +22,7 @@
         ".contentrain/meta/*"
       ],
       "ignore_empty_commits": true,
-      "note": "context.json and the meta files are ignored: both carry a wall clock timestamp (meta records updated_at) and nothing else that differs between one application and two. The content file itself is keyed by entry id, so a repeat overwrites it, which is why this fixture is repeat-indistinguishable rather than safe by deduplication."
+      "note": "context.json and the meta files are ignored: both carry a wall clock timestamp (meta records updated_at), so a clean baseline never reproduces them. The content file is keyed by entry id, so if a repeat overwrites that key the end state cannot distinguish one application from two. The fixture is therefore read as indistinguishable rather than as deduplicated."
     },
     "setup": {
       "directories": [
@@ -102,7 +102,7 @@
           }
         ]
       ],
-      "note": "declared idempotentHint:true, takes a list of entries, and auto-commits: F5 applies as well as the repeat modes"
+      "note": "declared idempotentHint:true, takes a list of entries, and auto-commits, so F5 applies as well as the repeat modes"
     },
     {
       "id": "save_vocabulary_term",

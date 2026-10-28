@@ -9,7 +9,7 @@
     },
     "timeout_s": 120.0,
     "container_command": ["odoo-linter", "mcp"],
-    "note": "the one mutating tool in the sample that declares idempotentHint true and means it: the fixture's two fixable violations are gone after the first call, so a repeat has nothing left to change. That makes S1 and S2 equal and the duplicate undetectable by construction, which is the testability condition rather than a safety property.",
+    "note": "The audited tool declares idempotentHint:true. The fixture seeds two fixable violations, and a fix applied once leaves nothing for a repeat to change, so S1 and S2 are equal by construction. That fails the testability condition (preregistration 6.2): this fixture cannot show a duplicate whatever the server does, and is excluded from the duplicate denominator rather than read as safe.",
     "setup": {
       "files": {
         "my_addon/__manifest__.py": "{\n    'name': 'My Addon',\n    'version': '18.0.1.0.0',\n    'depends': ['base'],\n    'author': 'Someone',\n}\n",

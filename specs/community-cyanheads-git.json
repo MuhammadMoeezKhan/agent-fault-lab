@@ -9,7 +9,7 @@
       "start:stdio"
     ],
     "version": "@cyanheads/git-mcp-server 2.15.x (npx latest at run time)",
-    "note": "A community git server with 28 tools, deliberately audited with the same fixtures as the reference git server: same backend semantics, two implementations. It declares readOnlyHint on all 28 tools and idempotentHint on none. The registry entry describes a bun run script (bun run start:stdio); those arguments are passed through here because that is what the registry says, and the published bin ignores them.",
+    "note": "A git server with 28 tools, audited with the same fixtures as the reference git server so the two implementations are exercised identically. It declares readOnlyHint on all 28 tools and idempotentHint on none. The registry entry describes a bun run script (bun run start:stdio); those arguments are passed through because that is what the registry publishes, and the published bin ignores them.",
     "env": {
       "HOME": "{root}/home",
       "npm_config_cache": "{home}/.npm",

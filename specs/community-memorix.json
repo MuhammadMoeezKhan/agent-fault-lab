@@ -32,7 +32,7 @@
         "revisionCount"
       ],
       "name": "memorix-store",
-      "note": "revisionCount is ignored deliberately. With topicKey set the server does what its schema promises (the existing observation is updated, not duplicated), and the only difference between one application and two is that this counter reads 2. Observing it made the fixture score DUPLICATED, which would have been a false finding: the stored payload is identical. Ignoring it makes one application indistinguishable from two, which is the honest verdict, and the fixture is then kept out of the duplicate denominator rather than counted as safe."
+      "note": "revisionCount is ignored deliberately (preregistration 6.3). It is a monotonic counter, so it increments on a repeat whether or not the stored payload changes, and observing it would make any repeat read as duplicated regardless of effect. With it dropped, a repeat that leaves the payload identical is indistinguishable from one application, and the fixture is kept out of the duplicate denominator rather than counted as safe."
     },
     "setup": {
       "directories": [
@@ -102,7 +102,7 @@
           }
         ]
       ],
-      "note": "the same append with topicKey set, which the server's own tip says prevents duplicates: a server-offered dedup key, tested behaviourally. The upsert holds: a repeat updates the one row and only bumps revisionCount, which the observer ignores"
+      "note": "the same append with topicKey set, which the server's own tool description offers as preventing duplicates: a server-offered dedup key, exercised behaviourally rather than taken on trust"
     }
   ]
 }

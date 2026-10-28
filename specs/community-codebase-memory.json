@@ -3,7 +3,7 @@
     "name": "community-codebase-memory",
     "command": ["npx", "-y", "codebase-memory-mcp"],
     "version": "codebase-memory-mcp 0.12.x (npx latest at run time)",
-    "note": "One of only two servers in the sample that annotate their mutating tools at all. index_repository declares idempotentHint:true and ingest_traces declares idempotentHint:false with destructiveHint:true, so both claims can be tested rather than assumed. The index lives in memory unless persistence is asked for, which is why the fixtures set it.",
+    "note": "index_repository declares idempotentHint:true; ingest_traces declares idempotentHint:false with destructiveHint:true. Both declarations are visible in tools/list, and the fixtures exercise the tools they describe. The index lives in memory unless persistence is asked for, which is why the fixtures set it.",
     "env": {
       "HOME": "{root}/home",
       "npm_config_cache": "{home}/.npm",
@@ -42,7 +42,7 @@
       "probes": [
         ["list_projects", {}]
       ],
-      "note": "declared idempotentHint:true, and the declaration is what is under test"
+      "note": "declared idempotentHint:true; the fixture exercises the tool that carries the declaration"
     }
   ]
 }
