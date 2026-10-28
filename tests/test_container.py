@@ -615,3 +615,31 @@ def test_home_and_cwd_can_be_siblings_in_the_same_root(tmp_path):
     # No tmpfs over the home, or the diff would never see what the server
     # wrote there.
     assert not [a for a in argv if a.startswith(f"--tmpfs={WORKDIR}")]
+
+
+def test_a_host_temp_directory_is_not_forwarded_into_the_container():
+    """TMPDIR names a path that exists on the host and not in the container.
+
+    Forwarding it makes a server fail on a path the harness invented, and that
+    failure would then be recorded as a property of the server: one candidate
+    was nearly parked as broken when the real cause was a socket directory it
+    could not create under the host's TMPDIR. A containment artifact counted
+    as a server defect inflates both the park list and the funnel.
+    """
+    containment = Containment(image="img", mount="/trial")
+    argv = containment.run_argv(
+        ["server"],
+        env={
+            "TMPDIR": "/var/folders/ab/cd/T/",
+            "TMP": "/var/tmp",
+            "TEMP": "/var/tmp",
+            "KEEP_ME": "yes",
+        },
+    )
+    joined = " ".join(argv)
+    assert "TMPDIR" not in joined
+    assert "--env=TMP=" not in joined
+    assert "--env=TEMP=" not in joined
+    # The container still gets a writable temp directory of its own.
+    assert "--tmpfs=/tmp:exec" in argv
+    assert "--env=KEEP_ME=yes" in argv

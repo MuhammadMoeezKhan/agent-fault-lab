@@ -69,6 +69,17 @@ BLOCKED_ENV = (
     "SSH_",
 )
 
+#: Dropped for correctness rather than secrecy. These name a temporary
+#: directory on the host, and that path does not exist inside the container,
+#: so forwarding it makes a server that uses it fail on a path we invented.
+#: One server was nearly parked as broken when the real cause was this: it
+#: tried to create a socket directory under the host's TMPDIR and got ENOENT.
+#: A failure caused by the containment profile would be counted as a property
+#: of the server, which would quietly inflate both the park list and the
+#: funnel's "did not start" row. The container has its own /tmp, mounted as a
+#: tmpfs with exec, which is what a server gets when these are unset.
+HOST_TEMP_ENV = ("TMPDIR", "TMP", "TEMP")
+
 
 class ContainerError(RuntimeError):
     """Docker is missing, not running, or refused a build."""
@@ -240,7 +251,7 @@ class Containment:
         if self.read_only:
             argv.append("--read-only")
         for key, value in sorted((env or {}).items()):
-            if key == "HOME" or _blocked(key):
+            if key == "HOME" or key in HOST_TEMP_ENV or _blocked(key):
                 continue
             argv.append(f"--env={key}={self.translate(value)}")
         argv.extend(self.extra_run_args)
