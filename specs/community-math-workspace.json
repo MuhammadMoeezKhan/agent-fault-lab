@@ -1,0 +1,41 @@
+{
+  "server": {
+    "name": "community-math-workspace",
+    "command": ["uvx", "math-mcp-learning-server"],
+    "container_command": ["math-mcp-learning-server"],
+    "version": "math-mcp-learning-server (PyPI, uvx latest at image build time)",
+    "note": "Drawn in frame order from block 2 of Frame 3. Almost all of its tools are pure computation carrying no annotations; exactly one tool keeps durable state, and that is the one audited.",
+    "env": { "HOME": "{root}/home", "NO_COLOR": "1" },
+    "observer": {
+      "kind": "json-doc",
+      "name": "workspace",
+      "path": "home/.math-mcp",
+      "patterns": ["workspace.json"],
+      "drop_keys": [
+        "created",
+        "updated",
+        "timestamp",
+        "last_access",
+        "session_id",
+        "statistics.total_calculations",
+        "statistics.session_count"
+      ]
+    },
+    "note_projection": "The whole store is one JSON document carrying four wall clock timestamps, a random per-process session id, and two counters, so a clean baseline never reproduces it and the fixture would be unprovable without a projection (preregistration 6.3). Dropped: the four timestamps and the session id, which no effect can change meaningfully; and the two counters under `statistics`, by the same rule that drops memorix's revisionCount and jdatamunch's call counter, since a monotonic counter increments on a repeat whether or not the payload changes. `variables` is measured in full, including the number of entries and every value in them, so a repeat that stored a second variable or a different result still shows.",
+    "note_cost": "The cost of that projection, stated: with the counters dropped, a repeat whose only trace is `total_calculations` is indistinguishable from one application. That matches this study's definition, since a client reading the workspace back cannot tell either, but it means this fixture reports on the keyed payload and not on internal bookkeeping.",
+    "setup": { "directories": ["home"] },
+    "timeout_s": 60.0
+  },
+  "fixtures": [
+    {
+      "tool": "save_calculation",
+      "arguments": {
+        "name": "total",
+        "expression": "10+25.5+7.25",
+        "result": 42.75
+      },
+      "probes": [["load_variable", { "name": "total" }]],
+      "note": "Declares readOnlyHint false and no idempotentHint. The variable is keyed by a caller-supplied name, so if a repeat overwrites the same entry the end state cannot distinguish one application from two. Included because the pooled denominator needs the keyed-overwrite shape exercised rather than assumed, and because this is the server the json-doc observer was built for."
+    }
+  ]
+}

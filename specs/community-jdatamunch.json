@@ -1,0 +1,110 @@
+{
+  "server": {
+    "name": "community-jdatamunch",
+    "command": [
+      "uvx",
+      "jdatamunch-mcp"
+    ],
+    "container_command": [
+      "jdatamunch-mcp"
+    ],
+    "version": "jdatamunch-mcp (PyPI, uvx latest at image build time)",
+    "note": "Drawn in frame order, block 3 of Frame 3 (candidate 151 to 300). It keeps its whole store under HOME at ~/.data-index, so HOME moves into the trial root; the working directory holds only the CSV it indexes.",
+    "note_annotations": "Every mutating tool declares readOnlyHint: false and none declares idempotentHint or destructiveHint, so the declarations say that the tools write and nothing about what a repeat would do. The fixtures below exercise the repeat behaviour the annotations leave unstated.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "sqlite",
+          "name": "dataset",
+          "path": "home/.data-index/charges/data.sqlite",
+          "tables": [
+            "rows"
+          ],
+          "note": "the indexed dataset itself, which is what a caller would call the effect. If a repeat rewrites identical rows this part cannot distinguish one application from two, which is why the history part below is included alongside it."
+        },
+        {
+          "kind": "append-log",
+          "name": "history",
+          "path": "home/.data-index/charges",
+          "patterns": [
+            "_history.jsonl"
+          ],
+          "drop_keys": [
+            "indexed_at"
+          ],
+          "note": "one line per index that actually ran, so the line count is what distinguishes one application from two. indexed_at is a wall clock timestamp and is the only declared drop; source_hash, row_count, column_count and schema_digest are all still measured."
+        }
+      ]
+    },
+    "note_projection": "Three files under the store are deliberately not observed, each for a stated reason (preregistration 6.3). `_savings.json` is a per-tool call counter: it increments on every call that does work, so observing it would make any repeat read as duplicated whatever the stored payload did, which is the rule that also drops memorix's revisionCount. `index.json` and `index.json.sha256` carry `indexed_at`, so a clean baseline never reproduces them; everything an effect could change in them (source_hash, fingerprint, row_count, column_count) is measured by the sqlite part or the history part instead.",
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "charges.csv": "id,customer,amount\n1,alice,10.00\n2,bob,25.50\n3,carol,7.25\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "note_prelude": "No server prelude. index_local needs no seeded dataset (its first application creates one and the fault is what the trial is about), and a server prelude calling index_local would consume the fault's first occurrence for the two fixtures that test that tool. delete_dataset carries its own prelude instead, which calls a different tool and so takes no fault."
+  },
+  "fixtures": [
+    {
+      "tool": "index_local",
+      "arguments": {
+        "path": "{root}/charges.csv"
+      },
+      "probes": [
+        [
+          "get_dataset_history",
+          {
+            "dataset": "charges"
+          }
+        ]
+      ],
+      "note": "The default call, with `incremental` left at its default of true. Paired with the fixture below, which passes `incremental: false` and changes nothing else, so the two differ only in that argument and the repeat behaviour of each is exercised separately."
+    },
+    {
+      "tool": "index_local",
+      "arguments": {
+        "path": "{root}/charges.csv",
+        "incremental": false
+      },
+      "probes": [
+        [
+          "get_dataset_history",
+          {
+            "dataset": "charges"
+          }
+        ]
+      ],
+      "note": "The same tool with `incremental: false` and nothing else changed, so this fixture and the one above isolate a single caller-passed argument. The history log carries one line per index that ran, and get_dataset_history reports a snapshot count, so a second application is visible in the end state if it is applied."
+    },
+    {
+      "tool": "delete_dataset",
+      "arguments": {
+        "dataset": "charges"
+      },
+      "probes": [
+        [
+          "list_datasets",
+          {}
+        ]
+      ],
+      "note": "A delete, included because the pooled denominator needs deletes as well as writes. A second application has nothing left to remove, so a repeat may be absorbed by absence; the trial records which. It carries its own prelude, which calls index_local so the dataset exists, and so takes no fault itself.",
+      "prelude": [
+        [
+          "index_local",
+          {
+            "path": "{root}/charges.csv"
+          }
+        ]
+      ]
+    }
+  ]
+}
