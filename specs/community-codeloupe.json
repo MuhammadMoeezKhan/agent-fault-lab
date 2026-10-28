@@ -1,0 +1,58 @@
+{
+  "server": {
+    "name": "community-codeloupe",
+    "command": ["npx", "-y", "@ndhkaeru/codeloupe-mcp"],
+    "container_command": ["codeloupe-mcp"],
+    "version": "@ndhkaeru/codeloupe-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. Thirty nine tools, none of them carrying any annotation at all, so nothing is declared about reads, writes, destruction or repeats. It works on its working directory and keeps its change history in process; the durable effect is the file it writes.",
+    "env": { "HOME": "{root}/home", "NO_COLOR": "1" },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": ["home", "home/*", ".DS_Store"]
+    },
+    "note_observer": "The effect is file content, so the plain filesystem observer is canonical and no projection is needed. HOME is moved into the trial root to keep the npm cache and any stray config out of the real home, and is then excluded from the snapshot because nothing the audited tools do writes there.",
+    "setup": {
+      "directories": ["home"],
+      "files": {
+        "notes.txt": "line one\n"
+      }
+    },
+    "timeout_s": 150.0
+  },
+  "fixtures": [
+    {
+      "tool": "edit_file",
+      "id": "append_unguarded",
+      "arguments": {
+        "path": "{root}/notes.txt",
+        "mode": "append",
+        "content": "appended\n"
+      },
+      "probes": [["read_file_range", { "path": "{root}/notes.txt" }]],
+      "note": "An append with no key and no precondition: the canonical duplicate-prone shape. Pairs with the fixture below, which passes one extra optional field and changes nothing else."
+    },
+    {
+      "tool": "edit_file",
+      "id": "append_guarded_by_expected_hash",
+      "arguments": {
+        "path": "{root}/notes.txt",
+        "mode": "append",
+        "content": "appended\n",
+        "expected_hash": "31f21b1dae81d3f32f40e38134bc688e6f7df4f08dde1d7d2cda3c4b59104e1c"
+      },
+      "probes": [["read_file_range", { "path": "{root}/notes.txt" }]],
+      "note": "The same call plus `expected_hash`, a compare-and-swap precondition naming the SHA-256 the caller last saw. The digest is of the seeded file and is written out here rather than captured, because the seed is fixed by this spec and so the digest is a constant of the fixture, not a value minted at run time. A first application changes the file and so changes its digest, which is the mechanism under test."
+    },
+    {
+      "tool": "create_file",
+      "id": "create_without_overwrite",
+      "arguments": {
+        "path": "{root}/created.txt",
+        "content": "first\n"
+      },
+      "probes": [["read_file_range", { "path": "{root}/created.txt" }]],
+      "note": "A create with `overwrite` left at its default. Included because the pooled denominator needs the create shape, and because this server decides overwrite behaviour by a caller-passed boolean, the same per-call shape a per-tool hint cannot express."
+    }
+  ]
+}

@@ -47,6 +47,11 @@ COLUMNS = (
     # mixes host-collected pre-rule rows with contained ones.
     "contained",
     "image",
+    # Added 2026-10-28, when the first compare-and-swap guard appeared. Kept
+    # apart from dedup_argument: a key absorbs a repeat and answers success, a
+    # precondition refuses it and answers an error.
+    "precondition_argument",
+    "precondition_supplied",
 )
 
 
@@ -126,6 +131,12 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         key for key, group in mutating.items() if any(row.confirmable is False for row in group)
     }
     with_dedup = {key for key, group in mutating.items() if group[0].dedup_argument}
+    offers_precondition = {
+        key for key, group in mutating.items() if group[0].precondition_argument
+    }
+    uses_precondition = {
+        key for key, group in mutating.items() if group[0].precondition_supplied
+    }
     violating = {key for key, group in by_tool.items() if any(row.annotation_violations for row in group)}
     flaky = [row for row in rows if not row.deterministic]
     unproven = [row for row in rows if row.verdict == UNPROVEN]
@@ -174,6 +185,10 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         "unconfirmable_rate": _rate(len(unconfirmable), len(mutating)),
         "with_dedup_argument": len(with_dedup),
         "dedup_rate": _rate(len(with_dedup), len(mutating)),
+        "offers_precondition": len(offers_precondition),
+        "offers_precondition_rate": _rate(len(offers_precondition), len(mutating)),
+        "uses_precondition": len(uses_precondition),
+        "uses_precondition_rate": _rate(len(uses_precondition), len(mutating)),
         "safe_tools": len(safe_tools),
         "safe_by_rejection": len(rejected),
         "safe_by_rejection_rate": _rate(len(rejected), len(safe_tools)),

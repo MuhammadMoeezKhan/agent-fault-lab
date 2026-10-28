@@ -144,6 +144,24 @@ def describe(rows: list[dict[str, Any]], *, intervals: bool = True) -> dict[str,
             len(mutating),
             interval=intervals,
         ),
+        # Counted apart from the key above. A key absorbs a repeat and answers
+        # success; a precondition refuses it and answers an error the caller
+        # cannot tell from a real failure. Offering one and passing one are
+        # also counted apart, because the same tool with and without it is the
+        # sharpest comparison in the study.
+        "offers_precondition": rate(
+            len([k for k, g in mutating.items() if g[0].get("precondition_argument")]),
+            len(mutating),
+            interval=intervals,
+        ),
+        "uses_precondition": rate(
+            len([
+                k for k, g in mutating.items()
+                if str(g[0].get("precondition_supplied")).lower() in ("true", "1")
+            ]),
+            len(mutating),
+            interval=intervals,
+        ),
     }
 
 
@@ -180,6 +198,8 @@ def main() -> int:
         f"- declares idempotentHint at all: "
         f"{pooled['declares_idempotent_hint']} of mutating fixtures",
         f"- takes a caller supplied deduplication key: {pooled['dedup_argument']}",
+        f"- offers a compare-and-swap precondition: {pooled['offers_precondition']}",
+        f"- and the fixture passed one: {pooled['uses_precondition']}",
         f"- safe because the backend refused the repeat: "
         f"{pooled['safe_by_rejection']}",
         f"- safe, but absorbed or refused cannot be told apart from state: "

@@ -53,6 +53,31 @@ DEDUP_ARGUMENT_HINTS = (
     "nonce",
 )
 
+#: Compare-and-swap preconditions, which are not idempotency keys and are
+#: counted separately. A key makes a repeat safe by *absorbing* it and
+#: answering success; a precondition makes it safe by *refusing* it, because
+#: the state it names has already moved. The safety is real either way, but
+#: what the caller gets back differs: an absorbed repeat is indistinguishable
+#: from the first success, while a refused one returns an error the caller
+#: cannot tell from a genuine failure. Conflating the two would hide that.
+PRECONDITION_ARGUMENT_HINTS = (
+    "expected_hash",
+    "expectedhash",
+    "expected_sha256",
+    "expected_version",
+    "expectedversion",
+    "expected_revision",
+    "expected_etag",
+    "if_match",
+    "ifmatch",
+    "if_none_match",
+    "if_unmodified_since",
+    "etag",
+    "precondition",
+    "base_version",
+    "baseversion",
+)
+
 MULTIPLICITY_NONE = "none"
 MULTIPLICITY_ONCE = "once"
 MULTIPLICITY_TWICE = "twice"
@@ -362,6 +387,10 @@ class ToolVerdict:
     #: and are labelled as such wherever they are reported.
     contained: bool = False
     image: str = ""
+    #: The compare-and-swap argument the tool offers, if any, and whether this
+    #: fixture passed it. See `_precondition_argument`.
+    precondition_argument: Optional[str] = None
+    precondition_supplied: bool = False
 
     def as_row(self) -> dict[str, Any]:
         return {
@@ -377,6 +406,8 @@ class ToolVerdict:
             "confirmable": self.confirmable,
             "caller_left_unsure": self.caller_left_unsure,
             "dedup_argument": self.dedup_argument or "",
+            "precondition_argument": self.precondition_argument or "",
+            "precondition_supplied": self.precondition_supplied,
             "read_only_hint": self.read_only_hint,
             "idempotent_hint": self.idempotent_hint,
             "annotation_violations": ";".join(self.annotation_violations),
@@ -674,6 +705,7 @@ class Audit:
 
         base = self.baselines(fixture)
         dedup = _dedup_argument(tool, fixture)
+        precondition, precondition_supplied = _precondition_argument(tool, fixture)
         verdicts: list[ToolVerdict] = []
 
         if not base["baseline_stable"]:
@@ -696,6 +728,8 @@ class Audit:
                     confirmable=base["confirmable"],
                     caller_left_unsure=False,
                     dedup_argument=dedup,
+                    precondition_argument=precondition,
+                    precondition_supplied=precondition_supplied,
                     read_only_hint=tool.read_only_hint if tool else None,
                     idempotent_hint=tool.idempotent_hint if tool else None,
                     annotation_violations=[],
@@ -793,6 +827,8 @@ class Audit:
                     confirmable=base["confirmable"],
                     caller_left_unsure=unsure,
                     dedup_argument=dedup,
+                    precondition_argument=precondition,
+                    precondition_supplied=precondition_supplied,
                     read_only_hint=tool.read_only_hint if tool else None,
                     idempotent_hint=tool.idempotent_hint if tool else None,
                     annotation_violations=violations,
@@ -914,6 +950,38 @@ def _dedup_argument(tool: Optional[Tool], fixture: Fixture) -> Optional[str]:
         if name.lower().replace("-", "_") in DEDUP_ARGUMENT_HINTS:
             return name
     return None
+
+
+def _precondition_argument(
+    tool: Optional[Tool], fixture: Fixture
+) -> tuple[Optional[str], bool]:
+    """Name the compare-and-swap argument, and say whether this call passed it.
+
+    Both halves matter and they answer different questions. Whether the tool
+    *offers* one is a fact about the ecosystem: a client could be safe here if
+    it knew to be. Whether the fixture *passed* one is what decides this row's
+    verdict. The same tool with and without it is the sharpest comparison the
+    audit can make, so the two are never collapsed into one flag.
+    """
+    offered: Optional[str] = None
+    if tool is not None:
+        properties = tool.input_schema.get("properties")
+        if isinstance(properties, dict):
+            for name in properties:
+                if name.lower().replace("-", "_") in PRECONDITION_ARGUMENT_HINTS:
+                    offered = name
+                    break
+    supplied = any(
+        name.lower().replace("-", "_") in PRECONDITION_ARGUMENT_HINTS
+        for name in fixture.arguments
+    )
+    if offered is None and supplied:
+        offered = next(
+            name
+            for name in fixture.arguments
+            if name.lower().replace("-", "_") in PRECONDITION_ARGUMENT_HINTS
+        )
+    return offered, supplied
 
 
 def _annotation_violations(
