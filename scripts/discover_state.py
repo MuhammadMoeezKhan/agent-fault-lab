@@ -106,6 +106,17 @@ def main() -> int:
     parser.add_argument("--before", nargs="*", default=[],
                         help="calls to make before the diff (session binding, "
                              "a project root), as tool:JSON")
+    parser.add_argument(
+        "--seed-file",
+        nargs="*",
+        default=[],
+        metavar="RELPATH=TEXT",
+        help="write a file into the working directory before the server "
+             "starts, as relpath=contents. A data-oriented server needs an "
+             "input file to act on, and the file has to exist before the "
+             "call or the tool refuses and the diff shows nothing. Use \\n "
+             "for a newline.",
+    )
     parser.add_argument("--git", action="store_true",
                         help="make the working directory a git repository with "
                              "one commit, which some servers require")
@@ -159,6 +170,14 @@ def main() -> int:
         else [args.runner, args.package]
     )
     command += [item.replace("{work}", work) for item in args.argv]
+    for spec in args.seed_file:
+        relative, _, contents = spec.partition("=")
+        target = os.path.join(work, relative)
+        os.makedirs(os.path.dirname(target) or work, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(contents.replace("\\n", "\n"))
+        print(f"seeded {relative} ({len(contents)} chars)")
+
     if args.git:
         import subprocess
 

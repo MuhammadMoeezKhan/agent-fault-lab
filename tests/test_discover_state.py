@@ -78,3 +78,25 @@ def test_the_flags_exist(flag):
 
 def test_no_em_dashes_in_the_script():
     assert "—" not in open(SCRIPT, encoding="utf-8").read()
+
+
+def test_a_seed_file_can_be_written_before_the_server_starts():
+    """A data-oriented server needs an input file that exists before the call.
+
+    Without one the tool refuses, the diff shows nothing, and the fixture
+    looks like a server with no durable state. The flag takes relpath=text
+    so the seed is part of the command that produced the result.
+    """
+    done = _run("--help")
+    assert "--seed-file" in done.stdout
+    assert "RELPATH=TEXT" in done.stdout
+
+
+def test_the_seed_is_written_into_the_working_directory_not_the_mount_root():
+    """It has to be where the server is started, not beside the throwaway HOME.
+
+    The mount root holds both, and a seed written at the root is not where a
+    tool given a relative path will look for it.
+    """
+    source = open(SCRIPT, encoding="utf-8").read()
+    assert "os.path.join(work, relative)" in source
