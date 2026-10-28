@@ -231,6 +231,45 @@ def _contained(server: dict[str, Any]) -> bool:
     )
 
 
+def _validate_preludes(
+    *,
+    target_prelude: tuple[tuple[str, dict[str, Any]], ...],
+    fixtures: list[Fixture],
+) -> None:
+    """Refuse a prelude that calls a tool under test.
+
+    A prelude runs inside the trial, before the first snapshot, so the fault
+    is already armed. If a prelude calls the fixture's own tool it consumes
+    the fault's first occurrence: the prelude itself fails, the trial aborts,
+    and the row comes out BROKEN or, worse, NOT_MUTATING, which reads as a
+    finding about the server rather than a mistake in the spec. That happened
+    once, on a server whose delete needed an index the index tool had to
+    create, and it cost an hour to see.
+
+    The constraint was documented on `Target.prelude` from the start and
+    enforced nowhere, which is the worst of both: a reader of the spec format
+    could know the rule and a writer of a spec could still break it silently.
+    """
+    server_tools = {tool for tool, _ in target_prelude}
+    for fixture in fixtures:
+        if fixture.tool in server_tools:
+            raise SpecError(
+                f"the server prelude calls {fixture.tool!r}, which fixture "
+                f"{fixture.identity!r} is testing. A prelude runs with the "
+                f"fault already armed, so it would consume the fault's first "
+                f"occurrence and the fixture's verdict would be meaningless. "
+                f"Move that call into the fixtures that need it, as their own "
+                f"prelude."
+            )
+        own = {tool for tool, _ in fixture.prelude}
+        if fixture.tool in own:
+            raise SpecError(
+                f"fixture {fixture.identity!r} has {fixture.tool!r} in its "
+                f"own prelude, which is the tool it is testing. Same reason: "
+                f"the prelude call would take the fault."
+            )
+
+
 def _prelude(raw: Any) -> tuple[tuple[str, dict[str, Any]], ...]:
     """Parse `prelude`: calls every trial makes before the fixture.
 
@@ -303,6 +342,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
                 probes=tuple(
                     (name, args) for name, args in (raw.get("probes") or [])
                 ),
+                prelude=_prelude(raw.get("prelude")),
                 note=raw.get("note", ""),
                 id=raw.get("id", ""),
             )
@@ -310,6 +350,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
     _assign_ids(fixtures)
     if not fixtures:
         raise SpecError("the spec needs at least one fixture")
+    _validate_preludes(target_prelude=_prelude(server.get("prelude")), fixtures=fixtures)
     return target, fixtures
 
 

@@ -799,3 +799,78 @@ def test_an_unlisted_field_is_refused_before_anything_is_written(tmp_path):
         report.to_csv([verdict], str(path))
     assert "something_new" in str(caught.value)
     assert not path.exists()
+
+
+# ------------------------------------------------- preludes and the armed fault
+
+def test_a_server_prelude_cannot_call_a_tool_under_test(tmp_path):
+    """The mistake that produced BROKEN rows instead of an error.
+
+    A prelude runs inside the trial with the fault already armed, so a
+    prelude call to the fixture's own tool takes the fault's first
+    occurrence. The prelude then fails, the trial aborts, and the row reads
+    NOT_MUTATING or BROKEN, which looks like a finding about the server. The
+    rule was documented on Target.prelude from the start and enforced
+    nowhere.
+    """
+    from agentfaultlab.spec import SpecError, from_document
+
+    document = {
+        "server": {
+            "name": "s",
+            "command": ["x"],
+            "observer": {"kind": "filesystem"},
+            "prelude": [["index_local", {"path": "p"}]],
+        },
+        "fixtures": [{"tool": "index_local", "arguments": {}}],
+    }
+    with pytest.raises(SpecError) as caught:
+        from_document(document)
+    assert "index_local" in str(caught.value)
+    assert "prelude" in str(caught.value)
+
+
+def test_a_fixture_prelude_cannot_call_its_own_tool(tmp_path):
+    from agentfaultlab.spec import SpecError, from_document
+
+    document = {
+        "server": {"name": "s", "command": ["x"], "observer": {"kind": "filesystem"}},
+        "fixtures": [
+            {
+                "tool": "write",
+                "arguments": {},
+                "prelude": [["write", {}]],
+            }
+        ],
+    }
+    with pytest.raises(SpecError):
+        from_document(document)
+
+
+def test_a_fixture_prelude_calling_another_tool_is_allowed(tmp_path):
+    """Which is the whole point: a delete needs something to delete.
+
+    The call that creates it is usually another fixture's tool, so it cannot
+    sit in the server prelude without being faulted when that other fixture
+    runs. Per-fixture is the only placement that works.
+    """
+    from agentfaultlab.spec import from_document
+
+    document = {
+        "server": {"name": "s", "command": ["x"], "observer": {"kind": "filesystem"}},
+        "fixtures": [
+            {"tool": "create", "arguments": {}},
+            {"tool": "delete", "arguments": {}, "prelude": [["create", {}]]},
+        ],
+    }
+    target, fixtures = from_document(document)
+    delete = [f for f in fixtures if f.tool == "delete"][0]
+    assert delete.prelude == (("create", {}),)
+    assert [f for f in fixtures if f.tool == "create"][0].prelude == ()
+
+
+def test_a_fixture_prelude_substitutes_the_root():
+    from agentfaultlab.audit import Fixture
+
+    fixture = Fixture(tool="delete", prelude=(("create", {"path": "{root}/a.csv"}),))
+    assert fixture.resolved_prelude("/tmp/t") == [("create", {"path": "/tmp/t/a.csv"})]

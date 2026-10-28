@@ -202,6 +202,13 @@ class Fixture:
     tool: str
     arguments: dict[str, Any] = field(default_factory=dict)
     probes: tuple[tuple[str, dict[str, Any]], ...] = ()
+    #: Calls this fixture alone needs before its own, on top of the server's
+    #: prelude. A delete has to have something to delete, and the call that
+    #: creates it is usually another fixture's tool, so it cannot go in the
+    #: server prelude without being faulted when that other fixture runs.
+    #: Subject to the same rule as the server prelude: it must not call this
+    #: fixture's own tool, and `validate_prelude` enforces that.
+    prelude: tuple[tuple[str, dict[str, Any]], ...] = ()
     note: str = ""
     #: Distinguishes two fixtures for the same tool. One SQL write tool can
     #: be an INSERT in one fixture and an UPDATE in another, and those behave
@@ -218,6 +225,9 @@ class Fixture:
 
     def resolved_probes(self, root: str) -> list[tuple[str, dict[str, Any]]]:
         return [(name, _substitute(args, root)) for name, args in self.probes]
+
+    def resolved_prelude(self, root: str) -> list[tuple[str, dict[str, Any]]]:
+        return [(name, _substitute(args, root)) for name, args in self.prelude]
 
 
 def _substitute(value: Any, root: str) -> Any:
@@ -423,7 +433,7 @@ class Audit:
         )
         try:
             with self._session(root, plan) as session:
-                self._run_prelude(session, root)
+                self._run_prelude(session, root, fixture)
                 before = observer.snapshot()
                 if probe:
                     probe_outputs["before"] = self._probe(session, fixture, root)
@@ -464,8 +474,16 @@ class Audit:
         result.snapshot_digest = digest(after)
         return result, before, after, probe_outputs
 
-    def _run_prelude(self, session: ServerSession, root: str) -> None:
-        for tool, arguments in self.target.resolve_prelude(root):
+    def _run_prelude(
+        self,
+        session: ServerSession,
+        root: str,
+        fixture: Optional[Fixture] = None,
+    ) -> None:
+        calls = list(self.target.resolve_prelude(root))
+        if fixture is not None:
+            calls += fixture.resolved_prelude(root)
+        for tool, arguments in calls:
             call = session.call_tool(tool, arguments)
             if not call.caller_saw_success:
                 raise SessionError(
