@@ -1,0 +1,55 @@
+{
+  "server": {
+    "name": "community-minnimemory",
+    "command": [
+      "npx",
+      "-y",
+      "minnimemory"
+    ],
+    "container_command": [
+      "minnimemory"
+    ],
+    "version": "minnimemory (npm latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. Four tools, none annotated. It reads a project's agent-memory files and writes its own discovery record. It refuses to guess the folder and names one explicitly, which is the behaviour that makes it auditable against a seeded project rather than against anything of the operator's.",
+    "note_containment": "Worth recording for the containment section rather than only here: this server writes under `~/.claude`, the agent's own configuration directory, which hard rule 9 names as off limits to an unaudited server. Contained, that is the throwaway HOME inside the trial root and harmless. On a host run it would have written into the real one. It is the clearest justification in the sample for the rule, and it was found by running the server, not by reading about it.",
+    "note_scope": "Its own error message invites the caller to pass the operator's assistant memory folder and every file currently loaded into the agent's context. That path was not taken and is not auditable: it would mean handing a third-party server this program's own notes. The fixture names a seeded project instead, which the same message offers as the alternative.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "json-doc",
+      "name": "discovery",
+      "path": "home/.claude/minnimemory",
+      "patterns": [
+        "discovery.json"
+      ],
+      "drop_keys": [
+        "savedAt"
+      ]
+    },
+    "note_projection": "One key is dropped (preregistration 6.3): `savedAt`, a wall clock stamp, measured as the only field varying between two identical clean runs rather than guessed at. The record's substance is measured in full, including the project key, its target, its source and its reported flag, and the projects map keeps its entries, so a repeat that recorded a second project would show.",
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "CLAUDE.md": "# Project\n\nA fixture project.\n",
+        "docs/a.md": "alpha\n",
+        "docs/b.md": "beta\n",
+        "docs/c.md": "gamma\n"
+      }
+    },
+    "timeout_s": 180.0
+  },
+  "fixtures": [
+    {
+      "tool": "init",
+      "id": "discover_a_seeded_project",
+      "arguments": {
+        "target": "{root}"
+      },
+      "note": "The discovery record is keyed by the target folder, so a repeat is expected to overwrite rather than accumulate, and the fixture is here for the keyed-overwrite shape the pooled denominator needs. No probe: its read tools report the project's own files rather than the record it wrote, so none of them can confirm this effect, which is recorded as unconfirmable rather than borrowed from a tool that measures something else."
+    }
+  ]
+}
