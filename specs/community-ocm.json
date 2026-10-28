@@ -1,0 +1,54 @@
+{
+  "server": {
+    "name": "community-ocm",
+    "command": [
+      "uvx",
+      "ocm-mcp-server"
+    ],
+    "container_command": [
+      "ocm-mcp-server"
+    ],
+    "version": "ocm-mcp-server (PyPI, uvx latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. Thirty five tools, six declaring readOnlyHint false and none declaring idempotentHint. Its apply and rollback tools need a configured cluster and are out of scope under the containment profile, which supplies no credentials and no network. The audited tool is a proposal: it needs no cluster, and it appends one line to a hash-chained audit log on every call.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "append-log",
+      "name": "audit-log",
+      "path": "home/.ocm-mcp",
+      "patterns": [
+        "audit.jsonl"
+      ],
+      "drop_keys": [
+        "ts",
+        "duration_ms",
+        "hash",
+        "prev",
+        "actor"
+      ]
+    },
+    "note_projection": "Five keys are dropped (preregistration 6.3). `ts` and `duration_ms` are wall clock and elapsed time. `hash` and `prev` are the chain links, and they are derived from `ts`, so they move whenever it does and carry no information a repeat could change that `seq` does not already carry. `actor` is dropped for a different reason: it embeds the operating system account name of whoever ran the trial, and this spec is public, so the study does not record it. `seq` is deliberately kept and is the measurement: it is the line's position in the chain, so one application leaves `seq` 1 and two leave 1 and 2. The lock file beside the log is not matched by the pattern.",
+    "note_scope": "The tool answers with a static-guardrail rejection, or with an error about the missing cluster config, depending on the manifest. Either way it writes its audit line first, which is why this fixture is auditable without a cluster at all. The verdict comes from the log, never from the reply, which is the whole point of a replay oracle.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 150.0
+  },
+  "fixtures": [
+    {
+      "tool": "propose_manifestwork",
+      "id": "propose_rejected_manifest",
+      "arguments": {
+        "cluster": "c1",
+        "name": "w1",
+        "summary": "a test work",
+        "manifests_json": "[{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"cm1\"}}]"
+      },
+      "note": "An append to a hash-chained log, with no key in the arguments: the duplicate-prone shape. The manifest is one the server's own static guardrails reject, so the proposal never needs a cluster, and the audit line is written before the rejection is returned. No probe: the only tool that would reveal the log is this same tool, and calling it as a probe appends another line, which changes the state being measured and made every row unprovable on the first attempt. A fixture with no read path is recorded as unconfirmable, which is the honest answer here."
+    }
+  ]
+}
