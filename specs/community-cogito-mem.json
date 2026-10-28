@@ -1,0 +1,65 @@
+{
+  "server": {
+    "name": "community-cogito-mem",
+    "command": [
+      "uvx",
+      "cogito-mem",
+      "mcp"
+    ],
+    "container_command": [
+      "cogito-mem",
+      "mcp"
+    ],
+    "version": "cogito-mem (PyPI, uvx latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. Two tools: memory_append, which declares readOnlyHint false, destructiveHint false and idempotentHint false, and memory_query, which declares readOnlyHint true. The published bin takes a subcommand and exits 2 with a usage message when given none, so `mcp` is part of the launch command.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1",
+      "USER": "auditor",
+      "LOGNAME": "auditor"
+    },
+    "observer": {
+      "kind": "sqlite",
+      "name": "memory-log",
+      "path": "home/.cogito-mem/memory/*/log.sqlite3",
+      "ignore_columns": [
+        "id",
+        "created_at",
+        "valid_at",
+        "pieces"
+      ],
+      "tables": [
+        "log"
+      ]
+    },
+    "note_observer": "The store sits under a directory named for the account and the machine that created it. `USER` is pinned so the first half is fixed, but the second half is derived from the host and cannot be set, so the path carries a glob: writing the real name here would make this spec work on one computer only, and would record the operator's account name in a public file. The observer refuses a glob that matches more than one store rather than taking whichever sorted first.",
+    "note_sidecars": "The store is sqlite with a write-ahead log and a shared-memory file beside it. Those are read through the database rather than compared as bytes, which is why this is a sqlite observer and not a filesystem one: their contents never match between two runs.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 180.0,
+    "note_projection": "Four columns move on their own and are dropped (preregistration 6.3), each measured as varying between two identical clean runs rather than guessed at. `created_at` and `valid_at` are epochs. `id` is a time-ordered UUID, so it is a timestamp in another coat. `pieces` embeds that same id alongside offsets derived from the text, so it varies for the same reason and carries nothing the text does not. `seq` is deliberately kept and is the measurement: it is the entry's position in the log, so one application leaves one row at seq 1 and two leave rows at 1 and 2. `title`, `text`, `author`, `thread_id`, `client_ref`, `retracts` and `imported` are all still measured.",
+    "note_client_ref": "Worth recording: the log table has a `client_ref` column, which is the shape of a caller-supplied reference, and the tool's input schema does not offer it. The data model anticipates a caller naming its own write; the tool surface gives a client no way to do it. This is not counted as a deduplication key, because a key a caller cannot pass is not one."
+  },
+  "fixtures": [
+    {
+      "tool": "memory_append",
+      "id": "append_a_note",
+      "arguments": {
+        "text": "A note about retries.",
+        "title": "Retry safety"
+      },
+      "probes": [
+        [
+          "memory_query",
+          {
+            "text": "retries"
+          }
+        ]
+      ],
+      "note": "An append with no key in the arguments: the duplicate-prone shape. The tool declares idempotentHint false, so the declaration says a repeat is not safe, and this fixture finds out whether the state agrees. It is one of the few servers in the sample that both declares the hint and offers a read tool, so the row can also say whether a caller could have checked."
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob
 import os
 import sqlite3
 from typing import Any, Iterable, Optional
@@ -57,6 +58,27 @@ class SqliteObserver:
         )
         self.max_rows = max_rows
 
+    def resolve(self) -> Optional[str]:
+        """The database file, resolving a glob in the configured path.
+
+        Some servers keep their store under a directory named for the machine
+        or the account that created it. Writing that name into a spec would
+        make the spec work on one computer only, which defeats the point of a
+        spec, and would record the operator's account name in a public file.
+        A single glob segment keeps the spec portable.
+
+        Ambiguity is refused rather than guessed: if a glob matches more than
+        one database the snapshot says so and the trial is not silently
+        pointed at whichever one sorted first.
+        """
+        if not any(ch in self.path for ch in "*?["):
+            return self.path if os.path.exists(self.path) else None
+        matches = sorted(glob.glob(self.path))
+        if len(matches) == 1:
+            return matches[0]
+        self._ambiguous = matches
+        return None
+
     def _ignored(self, table: str, column: str) -> bool:
         """True for a column named either bare or as `table.column`."""
         lowered = column.lower()
@@ -64,9 +86,19 @@ class SqliteObserver:
         return lowered in self.ignore_columns or qualified in self.ignore_columns
 
     def snapshot(self) -> Snapshot:
-        if not os.path.exists(self.path):
+        self._ambiguous: list[str] = []
+        resolved = self.resolve()
+        if resolved is None:
+            if self._ambiguous:
+                # Recorded in the snapshot, so two baselines that each matched
+                # a different number of stores compare unequal and the row
+                # comes out UNPROVEN instead of quietly wrong.
+                return {
+                    "__present__": False,
+                    "__ambiguous__": [os.path.basename(m) for m in self._ambiguous],
+                }
             return {"__present__": False}
-        uri = f"file:{self.path}?mode=ro"
+        uri = f"file:{resolved}?mode=ro"
         try:
             connection = sqlite3.connect(uri, uri=True, timeout=5)
         except sqlite3.Error as exc:
