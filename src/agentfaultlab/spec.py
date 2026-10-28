@@ -271,7 +271,7 @@ def _validate_preludes(
                 f"Move that call into the fixtures that need it, as their own "
                 f"prelude."
             )
-        own = {tool for tool, _ in fixture.prelude}
+        own = {entry[0] for entry in fixture.prelude}
         if fixture.tool in own:
             raise SpecError(
                 f"fixture {fixture.identity!r} has {fixture.tool!r} in its "
@@ -280,30 +280,57 @@ def _validate_preludes(
             )
 
 
-def _prelude(raw: Any) -> tuple[tuple[str, dict[str, Any]], ...]:
+def _prelude(raw: Any, *, allow_capture: bool = False) -> tuple[Any, ...]:
     """Parse `prelude`: calls every trial makes before the fixture.
 
     Accepts `[["tool", {...}], ...]` or `[{"tool": ..., "arguments": {...}}]`.
+
+    A fixture prelude may also carry `capture`, a mapping of name to a dotted
+    path into that call's reply, which the fixture's own arguments then refer
+    to as `{name}`. It exists for prepare-then-commit tools, where the token
+    the commit needs is minted by the prepare call and so cannot be written
+    into a static spec. A server prelude cannot capture: it runs once before
+    any fixture and has nothing to bind into.
     """
     if raw is None:
         return ()
     if not isinstance(raw, list):
         raise SpecError("server.prelude must be a list of calls")
-    calls: list[tuple[str, dict[str, Any]]] = []
+    calls: list[Any] = []
     for entry in raw:
+        captures: dict[str, str] = {}
         if isinstance(entry, dict):
             tool = entry.get("tool")
             arguments = entry.get("arguments") or {}
+            captures = entry.get("capture") or {}
         elif isinstance(entry, (list, tuple)) and entry:
             tool = entry[0]
             arguments = entry[1] if len(entry) > 1 else {}
+            captures = entry[2] if len(entry) > 2 else {}
         else:
             raise SpecError(f"unreadable prelude call: {entry!r}")
         if not isinstance(tool, str) or not tool:
             raise SpecError(f"a prelude call needs a tool name: {entry!r}")
         if not isinstance(arguments, dict):
             raise SpecError(f"prelude arguments for {tool} must be an object")
-        calls.append((tool, arguments))
+        if not isinstance(captures, dict):
+            raise SpecError(f"prelude capture for {tool} must be an object")
+        if captures and not allow_capture:
+            raise SpecError(
+                f"the server prelude call {tool!r} asks to capture "
+                f"{sorted(captures)!r}, but a server prelude runs once before "
+                f"any fixture and has nothing to bind into. Move the call "
+                f"into the fixtures that need the captured value."
+            )
+        for name, path in captures.items():
+            if not isinstance(path, str) or not path:
+                raise SpecError(
+                    f"capture {name!r} on {tool} needs a dotted path string"
+                )
+        if allow_capture:
+            calls.append((tool, arguments, captures))
+        else:
+            calls.append((tool, arguments))
     return tuple(calls)
 
 
@@ -352,7 +379,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
                 probes=tuple(
                     (name, args) for name, args in (raw.get("probes") or [])
                 ),
-                prelude=_prelude(raw.get("prelude")),
+                prelude=_prelude(raw.get("prelude"), allow_capture=True),
                 note=raw.get("note", ""),
                 id=raw.get("id", ""),
             )

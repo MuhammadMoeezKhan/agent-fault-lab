@@ -26,6 +26,7 @@ means the observer is not canonical yet and the result must not be trusted.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -208,7 +209,7 @@ class Fixture:
     #: server prelude without being faulted when that other fixture runs.
     #: Subject to the same rule as the server prelude: it must not call this
     #: fixture's own tool, and `validate_prelude` enforces that.
-    prelude: tuple[tuple[str, dict[str, Any]], ...] = ()
+    prelude: tuple[tuple[str, dict[str, Any], dict[str, str]], ...] = ()
     note: str = ""
     #: Distinguishes two fixtures for the same tool. One SQL write tool can
     #: be an INSERT in one fixture and an UPDATE in another, and those behave
@@ -220,24 +221,100 @@ class Fixture:
     def identity(self) -> str:
         return self.id or self.tool
 
-    def resolve(self, root: str) -> dict[str, Any]:
-        return _substitute(self.arguments, root)
+    def __post_init__(self) -> None:
+        # A prelude entry is (tool, arguments) or (tool, arguments, captures).
+        # Most need nothing captured, so the short form stays legal and is
+        # normalised here rather than at every use.
+        self.prelude = tuple(
+            (entry[0], entry[1], entry[2] if len(entry) > 2 else {})
+            for entry in self.prelude
+        )
 
-    def resolved_probes(self, root: str) -> list[tuple[str, dict[str, Any]]]:
-        return [(name, _substitute(args, root)) for name, args in self.probes]
+    def resolve(
+        self, root: str, bindings: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
+        return _substitute(self.arguments, root, bindings)
+
+    def resolved_probes(
+        self, root: str, bindings: Optional[dict[str, Any]] = None
+    ) -> list[tuple[str, dict[str, Any]]]:
+        return [
+            (name, _substitute(args, root, bindings)) for name, args in self.probes
+        ]
 
     def resolved_prelude(self, root: str) -> list[tuple[str, dict[str, Any]]]:
-        return [(name, _substitute(args, root)) for name, args in self.prelude]
+        return [(name, _substitute(args, root)) for name, args, _ in self.prelude]
+
+    @property
+    def prelude_captures(self) -> list[dict[str, str]]:
+        return [captures for _, _, captures in self.prelude]
 
 
-def _substitute(value: Any, root: str) -> Any:
+def _substitute(
+    value: Any, root: str, bindings: Optional[dict[str, Any]] = None
+) -> Any:
     if isinstance(value, str):
-        return value.replace("{root}", root)
+        text = value.replace("{root}", root)
+        for name, bound in (bindings or {}).items():
+            placeholder = "{%s}" % name
+            if text == placeholder:
+                # A whole-string placeholder keeps the captured value's type,
+                # so a numeric id stays a number rather than becoming "12".
+                return bound
+            text = text.replace(placeholder, str(bound))
+        return text
     if isinstance(value, dict):
-        return {key: _substitute(item, root) for key, item in value.items()}
+        return {key: _substitute(item, root, bindings) for key, item in value.items()}
     if isinstance(value, list):
-        return [_substitute(item, root) for item in value]
+        return [_substitute(item, root, bindings) for item in value]
     return value
+
+
+class CaptureError(RuntimeError):
+    """A prelude call did not carry the value the fixture needs."""
+
+
+def extract(payload: Any, path: str) -> Any:
+    """Read a dotted path out of a tool result, or raise.
+
+    Servers answer in two places at once: `structuredContent` when they have
+    an output schema, and a JSON document inside the text content when they
+    do not. Both are tried, structured first, because that is the one the
+    server declared.
+    """
+    for part in path.split("."):
+        if isinstance(payload, list):
+            try:
+                payload = payload[int(part)]
+                continue
+            except (ValueError, IndexError):
+                raise CaptureError(f"no element {part!r} in list at {path!r}")
+        if not isinstance(payload, dict) or part not in payload:
+            raise CaptureError(f"no key {part!r} at {path!r}")
+        payload = payload[part]
+    return payload
+
+
+def capture_from(result: Optional[dict[str, Any]], path: str) -> Any:
+    if result is None:
+        raise CaptureError(f"no result to capture {path!r} from")
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict):
+        try:
+            return extract(structured, path)
+        except CaptureError:
+            pass
+    text = _result_text(result)
+    if text:
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            return extract(parsed, path)
+    raise CaptureError(
+        f"{path!r} is in neither structuredContent nor the reply text"
+    )
 
 
 @dataclass
@@ -433,11 +510,13 @@ class Audit:
         )
         try:
             with self._session(root, plan) as session:
-                self._run_prelude(session, root, fixture)
+                bindings = self._run_prelude(session, root, fixture)
                 before = observer.snapshot()
                 if probe:
-                    probe_outputs["before"] = self._probe(session, fixture, root)
-                arguments = fixture.resolve(root)
+                    probe_outputs["before"] = self._probe(
+                        session, fixture, root, bindings
+                    )
+                arguments = fixture.resolve(root, bindings)
                 for attempt in range(1, applications + 1):
                     call = session.call_tool(fixture.tool, arguments, attempt=attempt)
                     result.calls.append(call)
@@ -459,7 +538,9 @@ class Audit:
                 if self.target.quiesce_s:
                     time.sleep(self.target.quiesce_s)
                 if probe:
-                    probe_outputs["after"] = self._probe(session, fixture, root)
+                    probe_outputs["after"] = self._probe(
+                        session, fixture, root, bindings
+                    )
                 after = observer.snapshot()
         except (SessionError, CallTimeout, OSError) as exc:
             result.error = f"{type(exc).__name__}: {exc}"
@@ -479,23 +560,60 @@ class Audit:
         session: ServerSession,
         root: str,
         fixture: Optional[Fixture] = None,
-    ) -> None:
-        calls = list(self.target.resolve_prelude(root))
+    ) -> dict[str, Any]:
+        """Run the preludes and return whatever they were asked to capture.
+
+        A fixture prelude may capture a value out of its own reply, which the
+        fixture's arguments then refer to by name. That is the only way to
+        audit a prepare-then-commit tool: the token the commit needs is minted
+        by the prepare call and cannot be written into a static spec.
+
+        The capture is per trial, deliberately. Every replay runs the prelude
+        again and binds a fresh token, so the baselines stay independent; what
+        is held constant within a trial is that both applications of the
+        fixture use the one token, which is the thing under test.
+        """
+        calls: list[tuple[str, dict[str, Any], dict[str, str]]] = [
+            (tool, arguments, {})
+            for tool, arguments in self.target.resolve_prelude(root)
+        ]
         if fixture is not None:
-            calls += fixture.resolved_prelude(root)
-        for tool, arguments in calls:
+            calls += [
+                (tool, arguments, captures)
+                for (tool, arguments), captures in zip(
+                    fixture.resolved_prelude(root), fixture.prelude_captures
+                )
+            ]
+        bindings: dict[str, Any] = {}
+        for tool, arguments, captures in calls:
             call = session.call_tool(tool, arguments)
             if not call.caller_saw_success:
                 raise SessionError(
                     f"prelude call {tool} failed on {self.target.name}: "
                     f"{_result_text(call.result) or call.error or 'timed out'}"
                 )
+            for name, path in (captures or {}).items():
+                try:
+                    bindings[name] = capture_from(call.result, path)
+                except CaptureError as exc:
+                    # Never fall through to an unsubstituted "{name}": the
+                    # fixture would call the tool with a literal placeholder
+                    # and the row would read as a server refusal.
+                    raise SessionError(
+                        f"prelude call {tool} on {self.target.name} could not "
+                        f"capture {name!r}: {exc}"
+                    ) from exc
+        return bindings
 
     def _probe(
-        self, session: ServerSession, fixture: Fixture, root: str
+        self,
+        session: ServerSession,
+        fixture: Fixture,
+        root: str,
+        bindings: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         outputs = []
-        for name, arguments in fixture.resolved_probes(root):
+        for name, arguments in fixture.resolved_probes(root, bindings):
             call = session.call_tool(name, arguments)
             outputs.append(
                 {

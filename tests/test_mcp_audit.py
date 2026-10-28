@@ -865,7 +865,9 @@ def test_a_fixture_prelude_calling_another_tool_is_allowed(tmp_path):
     }
     target, fixtures = from_document(document)
     delete = [f for f in fixtures if f.tool == "delete"][0]
-    assert delete.prelude == (("create", {}),)
+    # Normalised to (tool, arguments, captures); the short form stays legal
+    # in a spec and in hand-built fixtures.
+    assert delete.prelude == (("create", {}, {}),)
     assert [f for f in fixtures if f.tool == "create"][0].prelude == ()
 
 
