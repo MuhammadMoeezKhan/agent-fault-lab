@@ -100,3 +100,43 @@ def test_the_seed_is_written_into_the_working_directory_not_the_mount_root():
     """
     source = open(SCRIPT, encoding="utf-8").read()
     assert "os.path.join(work, relative)" in source
+
+
+def test_repeated_seed_file_flags_accumulate():
+    """Several --seed-file flags must all take effect.
+
+    With argparse's default behaviour for nargs="*", a repeated flag replaces
+    the earlier one instead of adding to it, so only the last seed was
+    written. Nothing failed loudly: the server simply reported that its input
+    was missing, and the candidate looked like it needed a fixture shape the
+    harness could not build. It was nearly parked on that basis.
+    """
+    spec = importlib.util.spec_from_file_location("discover_state", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    import tempfile
+
+    work = tempfile.mkdtemp()
+    written = module.seed_files(
+        work, ["a.txt=one", "b/c.txt=two", "d.txt=line\\nline"]
+    )
+    assert [name for name, _ in written] == ["a.txt", "b/c.txt", "d.txt"]
+    # Each file is on disk, the nested one had its parent created, and the
+    # escape is turned into a real newline.
+    assert open(os.path.join(work, "a.txt")).read() == "one"
+    assert open(os.path.join(work, "b", "c.txt")).read() == "two"
+    assert open(os.path.join(work, "d.txt")).read() == "line\nline"
+
+
+def test_the_seed_file_flag_is_configured_to_accumulate():
+    """A repeated --seed-file must add rather than replace.
+
+    argparse's default for nargs="*" replaces, so only the last seed was
+    written and nothing failed loudly: the server reported its input missing
+    and the candidate looked unfixturable. It was nearly parked on that basis.
+    """
+    source = open(SCRIPT, encoding="utf-8").read()
+    flag = source[source.index('"--seed-file"'):]
+    flag = flag[: flag.index("help=")]
+    assert 'action="extend"' in flag

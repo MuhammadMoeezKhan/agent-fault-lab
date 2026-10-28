@@ -93,6 +93,26 @@ def subprocess_run_quiet(argv: list[str]) -> list[str]:
     return [line for line in done.stdout.split() if line]
 
 
+
+def seed_files(work: str, specs: "list[str]") -> "list[tuple[str, int]]":
+    """Write `relpath=contents` seeds into `work`, creating parent directories.
+
+    Returns what was written, so the caller can report it. Each flag may carry
+    several seeds and the flag is repeatable; both spellings have to end up
+    here, because a seed that is silently dropped looks exactly like a server
+    refusing a fixture shape, and one candidate was nearly parked on that.
+    """
+    written = []
+    for spec in specs:
+        relative, _, contents = spec.partition("=")
+        target = os.path.join(work, relative)
+        os.makedirs(os.path.dirname(target) or work, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(contents.replace("\\n", "\n"))
+        written.append((relative, len(contents)))
+    return written
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--runner", required=True, choices=["npx", "uvx"])
@@ -109,13 +129,15 @@ def main() -> int:
     parser.add_argument(
         "--seed-file",
         nargs="*",
+        action="extend",
         default=[],
         metavar="RELPATH=TEXT",
         help="write a file into the working directory before the server "
-             "starts, as relpath=contents. A data-oriented server needs an "
-             "input file to act on, and the file has to exist before the "
-             "call or the tool refuses and the diff shows nothing. Use \\n "
-             "for a newline.",
+             "starts, as relpath=contents. Repeatable, and several may be "
+             "given to one flag; parent directories are created. A "
+             "data-oriented server needs an input file to act on, and the "
+             "file has to exist before the call or the tool refuses and the "
+             "diff shows nothing. Use \\n for a newline.",
     )
     parser.add_argument("--git", action="store_true",
                         help="make the working directory a git repository with "
@@ -170,13 +192,8 @@ def main() -> int:
         else [args.runner, args.package]
     )
     command += [item.replace("{work}", work) for item in args.argv]
-    for spec in args.seed_file:
-        relative, _, contents = spec.partition("=")
-        target = os.path.join(work, relative)
-        os.makedirs(os.path.dirname(target) or work, exist_ok=True)
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write(contents.replace("\\n", "\n"))
-        print(f"seeded {relative} ({len(contents)} chars)")
+    for relative, size in seed_files(work, args.seed_file):
+        print(f"seeded {relative} ({size} chars)")
 
     if args.git:
         import subprocess

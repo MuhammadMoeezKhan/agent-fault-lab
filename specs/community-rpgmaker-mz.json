@@ -1,0 +1,86 @@
+{
+  "server": {
+    "name": "community-rpgmaker-mz",
+    "command": [
+      "npx",
+      "-y",
+      "rpgmaker-mz-mcp"
+    ],
+    "container_command": [
+      "rpgmaker-mz-mcp"
+    ],
+    "version": "rpgmaker-mz-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. One hundred and twenty eight tools, none of them annotated, editing a game project's JSON data files in place. It refuses to work until a project is selected, and recognises a project by a marker file beside a data directory.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "prelude": [
+      [
+        "set_project",
+        {
+          "path": "{root}"
+        }
+      ]
+    ],
+    "note_prelude": "Every fixture needs the project selected first, and the selection is session state rather than a file, so it belongs in the server prelude. It calls a different tool from any fixture here, so it takes no fault: the rule that a prelude must not call the tool under test is satisfied and enforced by the spec loader.",
+    "observer": {
+      "kind": "filesystem",
+      "name": "project-data",
+      "path": "data",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "note_observer": "The effect is a rewritten JSON data file, so the plain filesystem observer is canonical and no projection is needed: the records carry no timestamps and the identifiers the server assigns are sequential rather than random.",
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "game.rmmzproject": "RPGMZ 1.0.0\n",
+        "data/System.json": "{\"gameTitle\":\"audit fixture\"}",
+        "data/Actors.json": "[null]",
+        "data/Classes.json": "[null,{\"id\":1,\"name\":\"Hero\"}]",
+        "data/Items.json": "[null]"
+      }
+    },
+    "timeout_s": 150.0,
+    "note_probes": "Each fixture probes the matching search tool with the argument name that tool actually declares. The first attempt passed `query`, which the server rejected as an unknown argument, and both rows then came back unconfirmable. That would have been a finding about the server when it was a mistake in the spec, and it would have moved the pooled unconfirmable rate in this study's favour, so the probe is checked against the schema rather than guessed."
+  },
+  "fixtures": [
+    {
+      "tool": "create_actor",
+      "id": "create_actor_append",
+      "arguments": {
+        "name": "Alice",
+        "classId": 1
+      },
+      "probes": [
+        [
+          "search_actors",
+          {
+            "searchTerm": "Alice"
+          }
+        ]
+      ],
+      "note": "An append into a JSON array with no key in the arguments: the server assigns the identifier, so the caller has nothing to collapse a repeat onto. The duplicate-prone shape, in a file a person edits by hand in a game editor."
+    },
+    {
+      "tool": "create_item",
+      "id": "create_item_append",
+      "arguments": {
+        "name": "Potion"
+      },
+      "probes": [
+        [
+          "search_items",
+          {
+            "searchTerm": "Potion"
+          }
+        ]
+      ],
+      "note": "The same shape on a second data file, included because the two write different files and a fault that lands between them is the partial-outcome case the task clusters are built around."
+    }
+  ]
+}
