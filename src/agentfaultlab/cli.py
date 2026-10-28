@@ -153,6 +153,19 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
         help="where the daily episode budget is tracked",
     )
     parser.add_argument(
+        "--client-binary",
+        metavar="PATH",
+        help=(
+            "the hosted client executable to measure, instead of whatever is "
+            "on PATH. The client on PATH updates itself (2.1.310, then .311, "
+            "then .312 within three days), so pinning a version means "
+            "installing it somewhere of our own: `npm install --prefix DIR "
+            "@anthropic-ai/claude-code@VERSION` and point this at "
+            "DIR/node_modules/.bin/claude. Nothing in the operator's own "
+            "installation is touched"
+        ),
+    )
+    parser.add_argument(
         "--client-version",
         metavar="VERSION",
         help=(
@@ -296,6 +309,7 @@ def _build_agent(
     config_dir: Optional[str] = None,
     disable_slash_commands: bool = False,
     expect_version: Optional[str] = None,
+    binary: Optional[str] = None,
 ):
     """`ollama`, `ollama:qwen3:8b`, `claude`, or `claude:sonnet`."""
     kind, _, model = descriptor.partition(":")
@@ -317,6 +331,7 @@ def _build_agent(
             config_dir=config_dir,
             disable_slash_commands=disable_slash_commands,
             expect_version=expect_version,
+            **({"binary": binary} if binary else {}),
         )
     raise SystemExit(f"unknown agent {descriptor!r}; use ollama[:model] or claude[:model]")
 
@@ -370,6 +385,7 @@ def _run_consequence(args: argparse.Namespace) -> int:
             config_dir=args.config_dir,
             disable_slash_commands=args.disable_slash_commands,
             expect_version=args.client_version,
+            binary=args.client_binary,
         )
     except ClientVersionMismatch as exc:
         print(f"refusing to start: {exc}", file=sys.stderr)

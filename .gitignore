@@ -3,3 +3,4 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ipynb_checkpoints/
+.client-2.1.311/
