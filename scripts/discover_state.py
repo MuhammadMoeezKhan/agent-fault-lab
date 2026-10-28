@@ -5,10 +5,24 @@ A fixture needs three things the registry does not say: the exact arguments a
 mutating tool requires, where the effect lands, and whether that place can be
 observed canonically. This script answers all three for one tool at a time.
 
-It starts the server with its own isolated HOME (so a probe never writes into
-the real one) while keeping the shared npm cache, so a launch costs seconds
-rather than a cold install. Then it snapshots the tree, calls the tool once,
-and prints what changed, including anything the server wrote under its HOME.
+It makes a throwaway trial root holding a HOME and a working directory, starts
+the server, snapshots the tree, calls the tool once, and prints what changed,
+including anything the server wrote under its HOME.
+
+**`--contain IMAGE` is required for any server not already audited** (hard
+rule 9). Without it the server runs on the host with nothing between it and
+the operator's files but an environment variable, which is exactly the
+arrangement that let one candidate write a skill file into the host agent's
+configuration and another auto-commit into this repository, both during a
+probe that called no tool. An isolated HOME is not a boundary. `--contain`
+mounts only the trial root, drops the network after install, and runs
+unprivileged.
+
+The trial root is the mount, not the working directory, because the two
+servers whose state is hardest to find are the ones that keep it under HOME
+(`memorix` writes `$HOME/.memorix/data/memorix.db`) and the ones that keep it
+beside the working directory. One diff has to show both, so HOME lives inside
+the mounted root and the server is started in a subdirectory of it.
 
 `--schema` prints the tool's input schema and calls nothing, which is how to
 work out the arguments before writing a fixture.
@@ -68,6 +82,17 @@ def diff(before: dict[str, str], after: dict[str, str]) -> dict[str, list[str]]:
     return {"added": added, "removed": removed, "changed": changed}
 
 
+def subprocess_run_quiet(argv: list[str]) -> list[str]:
+    """Whitespace-separated output, or nothing. Never raises."""
+    import subprocess
+
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [line for line in done.stdout.split() if line]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--runner", required=True, choices=["npx", "uvx"])
@@ -86,7 +111,36 @@ def main() -> int:
                              "one commit, which some servers require")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--keep", action="store_true", help="do not delete the tree")
+    parser.add_argument(
+        "--contain",
+        metavar="IMAGE",
+        help="run the server inside this container image (hard rule 9). "
+             "Required for any server not already audited on the host.",
+    )
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="build the --contain image first, installing --package into it",
+    )
+    parser.add_argument(
+        "--binary",
+        help="the executable the package installs, when it is not the last "
+             "segment of the package name. @modelcontextprotocol/"
+             "server-filesystem installs mcp-server-filesystem, so the "
+             "convention is wrong often enough to need overriding",
+    )
+    parser.add_argument(
+        "--on-host",
+        action="store_true",
+        help="deliberately run on the host, with no container. Only for a "
+             "server already audited, and only for reproduction.",
+    )
     args = parser.parse_args()
+    if not args.contain and not args.on_host:
+        parser.error(
+            "refusing to start a server on the host: pass --contain IMAGE "
+            "(hard rule 9), or --on-host to say you mean it"
+        )
 
     root = tempfile.mkdtemp(prefix="afl-state-")
     home = os.path.join(root, "home")
@@ -121,11 +175,46 @@ def main() -> int:
             check=True,
         )
 
+    containment = None
+    if args.contain:
+        from agentfaultlab.container import (
+            Containment,
+            build_image,
+            installed_argv,
+            require,
+        )
+
+        require()
+        if args.build:
+            build_image(
+                args.contain,
+                packages=[args.package] if args.runner == "npx" else [],
+                py_packages=[args.package] if args.runner == "uvx" else [],
+                quiet=False,
+            )
+        # The whole trial root is mounted, so a server that keeps its state
+        # under HOME and one that keeps it beside the working directory both
+        # land somewhere the diff below can see.
+        containment = Containment(image=args.contain, mount=root, cwd=work)
+        command = installed_argv(command)
+        if args.binary:
+            command = [args.binary] + command[1:]
+        # The host npm cache means nothing inside the container, and HOME is
+        # kept because it points inside the mounted root on purpose.
+        env.pop("npm_config_cache", None)
+
     print(f"command: {' '.join(command)}")
     print(f"root: {root}")
+    print(f"contained: {bool(containment)}")
 
     try:
-        with ServerSession(command, cwd=work, env=env, timeout_s=args.timeout) as session:
+        with ServerSession(
+            command,
+            cwd=work,
+            env=env,
+            timeout_s=args.timeout,
+            containment=containment,
+        ) as session:
             tools = {tool.name: tool for tool in session.list_tools()}
             if args.schema:
                 names = [args.tool] if args.tool else sorted(tools)
@@ -171,6 +260,23 @@ def main() -> int:
                 )
                 body = json.dumps(probe_call.result or probe_call.error or {})
                 print(f"\nprobe {name}: {body[:600]}")
+    except Exception as error:
+        print(f"\nfailed: {type(error).__name__}: {error}")
+        # The commonest cause by a distance, so it gets a hint rather than a
+        # puzzle: the derived binary name is wrong. The convention of taking
+        # the package name's last segment is right for most packages and
+        # wrong for enough of them to have cost an hour once already.
+        if args.contain and "MODULE_NOT_FOUND" in str(error):
+            listing = subprocess_run_quiet(
+                ["docker", "run", "--rm", "--network=none", args.contain,
+                 "ls", "/usr/local/bin"]
+            )
+            print(
+                f"\nthe derived binary {command[0]!r} may be wrong. "
+                f"executables in the image:\n  " + "\n  ".join(listing)
+            )
+            print("pass the right one with --binary")
+        return 1
     finally:
         if args.keep:
             print(f"\nkept {root}")

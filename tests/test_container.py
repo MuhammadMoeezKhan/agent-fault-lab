@@ -562,3 +562,56 @@ def test_the_package_a_launcher_would_fetch():
     assert package_of(["npx", "-y", "@cyanheads/git-mcp-server"]) == "@cyanheads/git-mcp-server"
     assert package_of(["memorix", "serve"]) == ""
     assert package_of([]) == ""
+
+
+# ------------------------------------------------- the working directory
+
+def test_the_workdir_is_the_mount_point_unless_asked_otherwise(tmp_path):
+    argv = make(tmp_path).run_argv(["server"])
+    assert f"--workdir={WORKDIR}" in argv
+
+
+def test_a_cwd_inside_the_mount_is_honoured(tmp_path):
+    """Fixture discovery needs HOME and the working directory in one diff.
+
+    The trial root holds both, so the mount is the root and the server starts
+    in a subdirectory of it. A server that keeps its state under HOME and one
+    that keeps it beside the working directory are then both visible.
+    """
+    work = tmp_path / "work"
+    work.mkdir()
+    argv = make(tmp_path, cwd=str(work)).run_argv(["server"])
+    assert f"--workdir={WORKDIR}/work" in argv
+    assert f"--workdir={WORKDIR}" not in argv
+
+
+def test_a_cwd_outside_the_mount_is_refused_not_ignored(tmp_path):
+    """Loudly, because the quiet version produces a wrong verdict.
+
+    A server started in the wrong directory writes where no observer reads,
+    the end state looks unchanged, and the fixture scores SAFE. That is the
+    one failure this module exists to prevent, so an impossible request stops
+    the run instead of falling back to the mount point.
+    """
+    with pytest.raises(ValueError):
+        make(tmp_path, cwd="/etc").run_argv(["server"])
+
+
+def test_a_cwd_still_cannot_reach_the_host_home(tmp_path):
+    with pytest.raises(ValueError):
+        make(tmp_path, cwd=os.path.expanduser("~")).run_argv(["server"])
+
+
+def test_home_and_cwd_can_be_siblings_in_the_same_root(tmp_path):
+    home = tmp_path / "home"
+    work = tmp_path / "work"
+    home.mkdir()
+    work.mkdir()
+    argv = make(tmp_path, cwd=str(work)).run_argv(
+        ["server"], env={"HOME": str(home)}
+    )
+    assert f"--env=HOME={WORKDIR}/home" in argv
+    assert f"--workdir={WORKDIR}/work" in argv
+    # No tmpfs over the home, or the diff would never see what the server
+    # wrote there.
+    assert not [a for a in argv if a.startswith(f"--tmpfs={WORKDIR}")]

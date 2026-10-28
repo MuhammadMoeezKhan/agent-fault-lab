@@ -116,6 +116,14 @@ class Containment:
     image: str
     mount: str
     workdir: str = WORKDIR
+    #: The directory the server is started in, when that is not the mount
+    #: point itself. Fixture discovery mounts a trial root holding both a
+    #: throwaway HOME and the working directory, and needs the server started
+    #: in the second while still observing the first: a server that keeps its
+    #: state under HOME and one that keeps it beside the working directory
+    #: both have to be visible in one diff. Given as a host path inside
+    #: `mount`, or an absolute in-container path.
+    cwd: Optional[str] = None
     home: str = HOME
     memory: str = "2g"
     pids: int = 512
@@ -181,6 +189,24 @@ class Containment:
             return inside
         return self.home
 
+    def container_cwd(self) -> str:
+        """Where the server is started, inside the container.
+
+        The mount point unless a caller asked for somewhere else, and a
+        request that does not land inside the mount is refused rather than
+        silently ignored: starting a server in the wrong directory is how a
+        fixture comes back SAFE for the wrong reason, which is the failure
+        this whole module exists to prevent.
+        """
+        if not self.cwd:
+            return self.workdir
+        inside = self.translate(self.cwd)
+        if inside == self.workdir or inside.startswith(self.workdir + "/"):
+            return inside
+        raise ValueError(
+            f"cwd {self.cwd!r} is not inside the mounted trial root {self.mount!r}"
+        )
+
     def run_argv(
         self,
         command: Sequence[str],
@@ -201,7 +227,7 @@ class Containment:
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             f"--volume={os.path.realpath(self.mount)}:{self.workdir}",
-            f"--workdir={self.workdir}",
+            f"--workdir={self.container_cwd()}",
             f"--env=HOME={home}",
             "--tmpfs=/tmp:exec",
         ]
