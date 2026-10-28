@@ -235,6 +235,11 @@ class Fixture:
     #: Subject to the same rule as the server prelude: it must not call this
     #: fixture's own tool, and `validate_prelude` enforces that.
     prelude: tuple[tuple[str, dict[str, Any], dict[str, str]], ...] = ()
+    #: Keys dropped from probe output before S1 and S2 are compared, declared
+    #: rather than inferred. Without them the comparison cannot tell a visible
+    #: duplicate from a timestamp that moved between two trials, and the
+    #: answer is recorded as unknown instead of guessed.
+    probe_drop_keys: tuple[str, ...] = ()
     note: str = ""
     #: Distinguishes two fixtures for the same tool. One SQL write tool can
     #: be an INSERT in one fixture and an UPDATE in another, and those behave
@@ -391,6 +396,10 @@ class ToolVerdict:
     #: fixture passed it. See `_precondition_argument`.
     precondition_argument: Optional[str] = None
     precondition_supplied: bool = False
+    #: Whether the server's own read tools distinguish one application from
+    #: two. Different from `confirmable`, which only asks whether they show
+    #: that something landed. See `Audit.baselines`.
+    duplicate_visible: Optional[bool] = None
 
     def as_row(self) -> dict[str, Any]:
         return {
@@ -408,6 +417,7 @@ class ToolVerdict:
             "dedup_argument": self.dedup_argument or "",
             "precondition_argument": self.precondition_argument or "",
             "precondition_supplied": self.precondition_supplied,
+            "duplicate_visible": self.duplicate_visible,
             "read_only_hint": self.read_only_hint,
             "idempotent_hint": self.idempotent_hint,
             "annotation_violations": ";".join(self.annotation_violations),
@@ -663,9 +673,9 @@ class Audit:
             fixture, condition="clean_once", plan=None, applications=1,
             retry_if_unsure=False, probe=bool(fixture.probes),
         )
-        twice, _, after_twice, _ = self._trial(
+        twice, _, after_twice, probes_twice = self._trial(
             fixture, condition="clean_twice", plan=None, applications=2,
-            retry_if_unsure=False,
+            retry_if_unsure=False, probe=bool(fixture.probes),
         )
         # One application, again, on another fresh backend. If this does not
         # match S1 then the observer is not canonical for this server and
@@ -678,6 +688,16 @@ class Audit:
         confirmable: Optional[bool] = None
         if fixture.probes and probes.get("before") is not None:
             confirmable = probes.get("before") != probes.get("after")
+        # Whether the *duplicate* is visible, which is a different question
+        # from whether the effect is. One server keys its record and appends
+        # to a history inside it: its read tool answers "one submission"
+        # after one application and after two, so a client can confirm that
+        # the write landed and cannot discover that it landed twice. That is
+        # the study's own question, so it is measured rather than inferred
+        # from `confirmable`.
+        duplicate_visible = _duplicate_visible(
+            probes.get("after"), probes_twice.get("after"), fixture.probe_drop_keys
+        )
         return {
             "s0": before_once,
             "s1": after_once,
@@ -687,6 +707,7 @@ class Audit:
             "baseline_stable": equal(after_once, after_once_again),
             "repeat_distinguishable": not equal(after_once, after_twice),
             "confirmable": confirmable,
+            "duplicate_visible": duplicate_visible,
             "clean_once": once,
             "clean_twice": twice,
             "probes": probes,
@@ -726,6 +747,7 @@ class Audit:
                     mutating=base["mutating"],
                     repeat_distinguishable=base["repeat_distinguishable"],
                     confirmable=base["confirmable"],
+                    duplicate_visible=base["duplicate_visible"],
                     caller_left_unsure=False,
                     dedup_argument=dedup,
                     precondition_argument=precondition,
@@ -825,6 +847,7 @@ class Audit:
                     mutating=base["mutating"],
                     repeat_distinguishable=base["repeat_distinguishable"],
                     confirmable=base["confirmable"],
+                    duplicate_visible=base["duplicate_visible"],
                     caller_left_unsure=unsure,
                     dedup_argument=dedup,
                     precondition_argument=precondition,
@@ -982,6 +1005,50 @@ def _precondition_argument(
             if name.lower().replace("-", "_") in PRECONDITION_ARGUMENT_HINTS
         )
     return offered, supplied
+
+
+
+def _strip_keys(value: Any, drop: tuple[str, ...]) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_keys(item, drop)
+            for key, item in value.items()
+            if key not in drop
+        }
+    if isinstance(value, list):
+        return [_strip_keys(item, drop) for item in value]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return value
+        return _strip_keys(parsed, drop)
+    return value
+
+
+def _duplicate_visible(
+    after_once: Any, after_twice: Any, drop: tuple[str, ...]
+) -> Optional[bool]:
+    """Whether the server's read tools tell one application from two.
+
+    Three-valued on purpose. S1 and S2 are separate trials at different wall
+    clock times, so any timestamp in a read tool's output differs whether or
+    not the effect was duplicated. One server keys its record and appends to a
+    history inside it, and its read tool returns the record with a changing
+    `updated` stamp: comparing raw output reported the duplicate as visible
+    when what had moved was the clock.
+
+    So: equal output is a reliable "not visible", because a duplicate that
+    showed would have made them differ. Differing output counts as visible
+    only when the spec has declared which keys to ignore. Differing output
+    with nothing declared is `None`, unknown, and is left out of the
+    denominator rather than resolved in either direction.
+    """
+    if after_once is None or after_twice is None:
+        return None
+    if _strip_keys(after_once, drop) == _strip_keys(after_twice, drop):
+        return False
+    return True if drop else None
 
 
 def _annotation_violations(

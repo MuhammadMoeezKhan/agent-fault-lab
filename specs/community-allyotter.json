@@ -1,0 +1,61 @@
+{
+  "server": {
+    "name": "community-allyotter",
+    "command": [
+      "uvx",
+      "allyotter-lite"
+    ],
+    "container_command": [
+      "allyotter-lite"
+    ],
+    "version": "allyotter-lite (PyPI, uvx latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. Seven tools declaring no annotations at all. It keeps a submissions file under HOME, so HOME moves into the trial root, and it offers a read tool that lists the file back.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "json-doc",
+      "name": "submissions",
+      "path": "home/.allyotter",
+      "patterns": [
+        "submissions.json"
+      ],
+      "drop_keys": [
+        "at",
+        "updated"
+      ]
+    },
+    "note_projection": "The store is one JSON document and every write stamps it, so a clean baseline never reproduces it verbatim. Two keys are dropped (preregistration 6.3): `updated` on the record and `at` on each history entry, both wall clock. Nothing else is: in particular each history entry keeps its `status`, and lists keep their length and order, so a repeat that appends a second history entry still shows even though every surviving field in it is identical to the first. That is the measurement here, because the record itself is keyed and a repeat upserts it.",
+    "note_lock": "A lock file sits beside the store and is not matched by the pattern, so it is neither compared nor mistaken for state.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 150.0
+  },
+  "fixtures": [
+    {
+      "tool": "track_submission",
+      "id": "track_a_submission",
+      "arguments": {
+        "network": "n1",
+        "product": "p1",
+        "status": "submitted"
+      },
+      "probes": [
+        [
+          "list_submissions",
+          {}
+        ]
+      ],
+      "note": "The record is keyed by network and product, so the record itself is an upsert, while the history inside it is append-only. The two halves of one write disagree about repeat safety, which is why the projection keeps list lengths: a caller reading the record back sees one submission either way, and the history is where a repeat is visible. `probe_drop_keys` is declared because the read tool returns a changing `updated` stamp: S1 and S2 are separate trials at different times, so without the declaration a moving clock would be read as a visible duplicate.",
+      "probe_drop_keys": [
+        "updated",
+        "at",
+        "next_action"
+      ]
+    }
+  ]
+}

@@ -149,6 +149,20 @@ def describe(rows: list[dict[str, Any]], *, intervals: bool = True) -> dict[str,
         # cannot tell from a real failure. Offering one and passing one are
         # also counted apart, because the same tool with and without it is the
         # sharpest comparison in the study.
+        # Counted over fixtures that have a read path at all, because a
+        # fixture with no probe cannot answer the question either way and
+        # pooling it with the ones that can would understate the gap.
+        "duplicate_hidden": rate(
+            len([
+                k for k, g in mutating.items()
+                if str(g[0].get("duplicate_visible")).lower() == "false"
+            ]),
+            len([
+                k for k, g in mutating.items()
+                if str(g[0].get("duplicate_visible")).lower() in ("true", "false")
+            ]),
+            interval=intervals,
+        ),
         "offers_precondition": rate(
             len([k for k, g in mutating.items() if g[0].get("precondition_argument")]),
             len(mutating),
@@ -198,6 +212,8 @@ def main() -> int:
         f"- declares idempotentHint at all: "
         f"{pooled['declares_idempotent_hint']} of mutating fixtures",
         f"- takes a caller supplied deduplication key: {pooled['dedup_argument']}",
+        f"- a duplicate is invisible through the server's own read tools: "
+        f"{pooled['duplicate_hidden']} (of the fixtures with a read path)",
         f"- offers a compare-and-swap precondition: {pooled['offers_precondition']}",
         f"- and the fixture passed one: {pooled['uses_precondition']}",
         f"- safe because the backend refused the repeat: "

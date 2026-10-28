@@ -52,6 +52,10 @@ COLUMNS = (
     # precondition refuses it and answers an error.
     "precondition_argument",
     "precondition_supplied",
+    # Added 2026-10-28. Whether a client could tell one application from two
+    # through the server's own read tools, which is not the same as whether
+    # it could tell that anything landed.
+    "duplicate_visible",
 )
 
 
@@ -130,6 +134,11 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
     unconfirmable = {
         key for key, group in mutating.items() if any(row.confirmable is False for row in group)
     }
+    duplicate_hidden = {
+        key
+        for key, group in mutating.items()
+        if group[0].duplicate_visible is False
+    }
     with_dedup = {key for key, group in mutating.items() if group[0].dedup_argument}
     offers_precondition = {
         key for key, group in mutating.items() if group[0].precondition_argument
@@ -185,6 +194,8 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         "unconfirmable_rate": _rate(len(unconfirmable), len(mutating)),
         "with_dedup_argument": len(with_dedup),
         "dedup_rate": _rate(len(with_dedup), len(mutating)),
+        "duplicate_hidden": len(duplicate_hidden),
+        "duplicate_hidden_rate": _rate(len(duplicate_hidden), len(mutating)),
         "offers_precondition": len(offers_precondition),
         "offers_precondition_rate": _rate(len(offers_precondition), len(mutating)),
         "uses_precondition": len(uses_precondition),
