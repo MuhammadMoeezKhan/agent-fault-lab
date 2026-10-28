@@ -1,0 +1,71 @@
+{
+  "server": {
+    "name": "community-hex-research",
+    "command": [
+      "npx",
+      "-y",
+      "@levnikolaevich/hex-research-mcp"
+    ],
+    "container_command": [
+      "hex-research-mcp"
+    ],
+    "version": "@levnikolaevich/hex-research-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. Sixteen tools, three of them declaring readOnlyHint false, and the audited one declares idempotentHint true with destructiveHint true, so the declaration is a claim the audit can test. It indexes a project's own markdown into a sqlite graph beside the project, at .hex-skills/researchgraph/index.db.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "sqlite",
+      "name": "research-graph",
+      "path": ".hex-skills/researchgraph/index.db",
+      "tables": [
+        "files",
+        "nodes",
+        "hypotheses",
+        "goals",
+        "hypothesis_goals",
+        "edges",
+        "runs",
+        "evidence",
+        "tasks"
+      ],
+      "ignore_columns": [
+        "mtime",
+        "parsed_at",
+        "created_at"
+      ]
+    },
+    "note_observer": "The index is sqlite, so it is read as rows rather than bytes: the file carries a write-ahead log and a shared-memory file whose contents never compare equal between two runs, and a filesystem observer over them reads UNPROVEN. The named tables are the graph itself. The full-text-search shadow tables (`*_fts_data`, `*_fts_idx`, `*_fts_docsize`) are left out because they hold the FTS extension's packed blobs, which are an encoding of the rows already measured in `hypotheses` and `goals` rather than an independent effect, and `sqlite_sequence` is left out because it is an autoincrement counter: it would move on a repeat whether or not a row was added, which is the rule that drops memorix's revisionCount.",
+    "note_frontmatter": "The seeded documents carry the frontmatter the indexer requires, and the valid status values are the ones its own PROTOCOL.md names. This matters because the tool writes its index even when validation fails, so a fixture seeded with invalid documents would still mutate and would still be auditable, but it would be testing the error path rather than the normal one.",
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "docs/goals/g1.md": "---\nid: G1\nclaim: Make retries safe\nstatus: active\nmetrics_target: zero duplicates\ncreated_at: 2026-01-01\nlast_touched: 2026-01-02\n---\n\n# G1\n",
+        "docs/hypotheses/h1.md": "---\nid: H01\nclaim: Retrying a write duplicates it\nstatus: in_progress\ncategory: mechanism\ngoals: [G1]\nmechanism: a retry reapplies the write\nparents: []\nsupersedes: []\ncompetes_with: []\nrefutes: []\nblocked_by: []\ncreated_at: 2026-01-01\nlast_touched: 2026-01-02\n---\n\n# H01\n"
+      }
+    },
+    "timeout_s": 180.0,
+    "note_projection": "Three columns move on their own and are dropped (preregistration 6.3), each measured as varying between two identical clean runs rather than guessed at: `files.mtime` and `files.parsed_at`, which are wall clock epochs recorded when the file was read, and `edges.created_at`, recorded when the edge was derived. `ignore_columns` applies by column name across tables, so this also drops `created_at` on hypotheses and goals. That costs nothing here: those values come from the seeded frontmatter and are constants of this fixture, so no repeat could change them. Everything a repeat could change is still measured, including the row counts of every named table and the content hash in `files.hash`."
+  },
+  "fixtures": [
+    {
+      "tool": "index_hypotheses",
+      "id": "index_unchanged_project",
+      "arguments": {
+        "path": "{root}"
+      },
+      "probes": [
+        [
+          "verify_index",
+          {
+            "path": "{root}"
+          }
+        ]
+      ],
+      "note": "Declares idempotentHint true, so the declaration says a repeat is safe and the trial tests that claim rather than measuring a gap. The project's documents do not change between applications, so a second index has the same input as the first."
+    }
+  ]
+}
