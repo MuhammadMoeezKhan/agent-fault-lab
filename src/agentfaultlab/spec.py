@@ -43,6 +43,7 @@ from .observers import (
     CompositeObserver,
     FilesystemObserver,
     GitObserver,
+    JsonDocObserver,
     SqliteObserver,
 )
 
@@ -102,6 +103,15 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             patterns=tuple(config.get("patterns") or ("*.jsonl", "*.log")),
             drop_keys=tuple(config.get("drop_keys") or ()),
             name=config.get("name", "append-log"),
+        )
+    if kind == "json-doc":
+        # Same contract as append-log: the documents are named by the spec and
+        # so are the keys the audit commits to not measuring.
+        return lambda root: JsonDocObserver(
+            os.path.join(root, config.get("path", "")),
+            patterns=tuple(config.get("patterns") or ("*.json",)),
+            drop_keys=tuple(config.get("drop_keys") or ()),
+            name=config.get("name", "json-doc"),
         )
     if kind == "composite":
         parts = [_observer_factory(part) for part in config.get("parts", [])]
