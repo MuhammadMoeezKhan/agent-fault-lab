@@ -48,7 +48,8 @@
       }
     },
     "timeout_s": 180.0,
-    "note_projection": "Three columns move on their own and are dropped (preregistration 6.3), each measured as varying between two identical clean runs rather than guessed at: `files.mtime` and `files.parsed_at`, which are wall clock epochs recorded when the file was read, and `edges.created_at`, recorded when the edge was derived. `ignore_columns` applies by column name across tables, so this also drops `created_at` on hypotheses and goals. That costs nothing here: those values come from the seeded frontmatter and are constants of this fixture, so no repeat could change them. Everything a repeat could change is still measured, including the row counts of every named table and the content hash in `files.hash`."
+    "note_projection": "Three columns move on their own and are dropped (preregistration 6.3), each measured as varying between two identical clean runs rather than guessed at: `files.mtime` and `files.parsed_at`, which are wall clock epochs recorded when the file was read, and `edges.created_at`, recorded when the edge was derived. `ignore_columns` applies by column name across tables, so this also drops `created_at` on hypotheses and goals. That costs nothing here: those values come from the seeded frontmatter and are constants of this fixture, so no repeat could change them. Everything a repeat could change is still measured, including the row counts of every named table and the content hash in `files.hash`.",
+    "image": "agent-fault-lab:fixtures-20261028b"
   },
   "fixtures": [
     {

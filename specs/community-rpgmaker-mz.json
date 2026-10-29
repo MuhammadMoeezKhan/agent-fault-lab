@@ -46,7 +46,8 @@
       }
     },
     "timeout_s": 150.0,
-    "note_probes": "Each fixture probes the matching search tool with the argument name that tool actually declares. The first attempt passed `query`, which the server rejected as an unknown argument, and both rows then came back unconfirmable. That would have been a finding about the server when it was a mistake in the spec, and it would have moved the pooled unconfirmable rate in this study's favour, so the probe is checked against the schema rather than guessed."
+    "note_probes": "Each fixture probes the matching search tool with the argument name that tool actually declares. The first attempt passed `query`, which the server rejected as an unknown argument, and both rows then came back unconfirmable. That would have been a finding about the server when it was a mistake in the spec, and it would have moved the pooled unconfirmable rate in this study's favour, so the probe is checked against the schema rather than guessed.",
+    "image": "agent-fault-lab:fixtures-20261028d"
   },
   "fixtures": [
     {

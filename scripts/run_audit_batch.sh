@@ -11,11 +11,18 @@
 # 2026-10-25 had to be run from an inline loop instead. A batch runner that can
 # silently run a server on the host is the wrong shape for this study.
 #
-# Usage: scripts/run_audit_batch.sh <output directory> <image> [repeats]
+# The image argument is optional as of 2026-10-29. Each spec now names the
+# image holding its own package, because the sample outgrew a single image:
+# twenty five servers are spread across ten of them, and a batch that forces
+# one image onto all of them starts most servers from an image that does not
+# contain them. Passing an image here still overrides every spec, which is
+# what reproducing an older batch needs.
+#
+# Usage: scripts/run_audit_batch.sh <output directory> [image] [repeats]
 set -eu
 
 OUT=${1:?output directory}
-IMAGE=${2:?container image, for example agent-fault-lab:audit}
+IMAGE=${2:-}
 REPEATS=${3:-3}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PY=${PYTHON:-$ROOT/.venv/bin/python}
@@ -42,10 +49,11 @@ for spec in "$ROOT"/specs/*.json; do
             faults="F7,F1,F2,F3" ;;
     esac
     echo "=== $name ($faults, repeats=$REPEATS, contained) $(date +%H:%M:%S)"
+    if [ -n "$IMAGE" ]; then set -- --image "$IMAGE"; else set -- ; fi
     "$PY" -m agentfaultlab.cli check "$spec" \
         --faults "$faults" \
         --repeats "$REPEATS" \
-        --image "$IMAGE" \
+        "$@" \
         --exit-zero \
         --out "$OUT/audit-$name.md" \
         --csv "$OUT/audit-$name.csv" \

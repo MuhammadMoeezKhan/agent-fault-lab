@@ -1,29 +1,60 @@
 {
   "server": {
     "name": "community-albumentationsx",
-    "command": ["uvx", "albumentationsx-mcp"],
-    "container_command": ["albumentationsx-mcp"],
+    "command": [
+      "uvx",
+      "albumentationsx-mcp"
+    ],
+    "container_command": [
+      "albumentationsx-mcp"
+    ],
     "version": "albumentationsx-mcp (PyPI, uvx latest at image build time)",
     "note": "Drawn in frame order from the first 150 of Frame 3, from the mutating survivors that were never attempted while the block-3 list was being worked. Forty seven tools, none annotated. It keeps tuning sessions in a JSON file beside its working directory and offers read tools that list them back.",
-    "env": { "HOME": "{root}/home", "NO_COLOR": "1" },
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
     "observer": {
       "kind": "json-doc",
       "name": "tuning-sessions",
       "path": "artifacts",
-      "patterns": ["tuning_sessions.json"],
-      "drop_keys": ["session_id", "created_at", "updated_at"]
+      "patterns": [
+        "tuning_sessions.json"
+      ],
+      "drop_keys": [
+        "session_id",
+        "created_at",
+        "updated_at"
+      ]
     },
     "note_projection": "Three keys are dropped (preregistration 6.3). `created_at` and `updated_at` are wall clock. `session_id` is a random identifier minted per call, so it differs between two clean runs for the same reason a timestamp does, and dropping it is what makes the baselines reproduce. That drop is also what makes the measurement work rather than weakening it: with the ids gone, two sessions started from identical arguments are byte-identical records, so the only thing distinguishing one application from two is **how many of them there are**, and the observer keeps list lengths.",
-    "setup": { "directories": ["home", "artifacts"] },
-    "timeout_s": 180.0
+    "setup": {
+      "directories": [
+        "home",
+        "artifacts"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:fixtures-20261029b"
   },
   "fixtures": [
     {
       "tool": "start_tuning_session",
       "id": "start_a_session",
-      "arguments": { "task": "sharpen a dataset" },
-      "probes": [["list_tuning_sessions", {}]],
-      "probe_drop_keys": ["session_id", "created_at", "updated_at"],
+      "arguments": {
+        "task": "sharpen a dataset"
+      },
+      "probes": [
+        [
+          "list_tuning_sessions",
+          {}
+        ]
+      ],
+      "probe_drop_keys": [
+        "session_id",
+        "created_at",
+        "updated_at"
+      ],
       "note": "An append where the server mints the identifier, so a caller has nothing to collapse a repeat onto: the duplicate-prone shape. The probe drops the same keys as the observer, because the read tool echoes the identifier and the stamps, and without the declaration a second session would be indistinguishable from a clock that moved."
     }
   ]

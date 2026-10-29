@@ -9,12 +9,22 @@ record a row of zeros, and the sign test reads a tie where the truth is that
 the client could not do the work. Counting designed clusters is the wrong
 denominator, so this script derives the right one per arm.
 
-Eligibility is deliberately strict and mechanical. A cluster is
-clean-complete on an arm when a clean, baseline, no-fault episode left the
-backend in the state of exactly one application (`multiplicity == "once"`)
-and the harness scored the task successful. Any other end state means the
-clean condition did not establish the baseline the faulted conditions are
-compared against.
+Eligibility is mechanical and asks exactly one question: did the arm do the
+work. A cluster is clean-complete when a clean, baseline, no-fault episode
+left the backend in the state of exactly one application
+(`multiplicity == "once"`). Any other end state means the clean condition did
+not establish the baseline the faulted conditions are compared against.
+
+**It deliberately does not consult `task_success`**, and the first version of
+this script did, which was wrong. `task_success` is `landed_once and claim ==
+success`, so it folds in the claim parser, and the parser is a separate
+instrument the preregistration already treats as provisional and
+hand-validated. One local-arm cluster recorded `state=once` with a correct
+computed answer in its message, and the parser read that message as asserting
+nothing, so the cluster was counted as one the arm could not complete. The
+arm had completed it. Eligibility is about capability; what the agent then
+said about it is a different axis measured separately, and mixing them
+understated the weaker arm.
 
 Two things this script refuses to do quietly:
 
@@ -103,10 +113,8 @@ def is_clean_baseline(row: dict) -> bool:
 
 
 def completed(row: dict) -> bool:
-    return (
-        row.get("multiplicity") == COMPLETE_MULTIPLICITY
-        and (row.get("task_success") or "").strip().lower() == "true"
-    )
+    """State only. See the module docstring for why the claim is not read."""
+    return row.get("multiplicity") == COMPLETE_MULTIPLICITY
 
 
 def collect(paths: list[str]) -> tuple[dict, list, int]:

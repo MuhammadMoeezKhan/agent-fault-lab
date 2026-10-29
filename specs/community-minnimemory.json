@@ -40,7 +40,8 @@
         "docs/c.md": "gamma\n"
       }
     },
-    "timeout_s": 180.0
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:fixtures-20261028d"
   },
   "fixtures": [
     {

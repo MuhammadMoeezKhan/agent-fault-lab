@@ -42,7 +42,8 @@
         "app.js": "const q = \"SELECT * FROM t WHERE id=\" + userInput;\n"
       }
     },
-    "timeout_s": 240.0
+    "timeout_s": 240.0,
+    "image": "agent-fault-lab:fixtures-20261029e"
   },
   "fixtures": [
     {

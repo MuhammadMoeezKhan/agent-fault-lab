@@ -62,7 +62,8 @@
         "repo/README.md": "seed\n"
       }
     },
-    "timeout_s": 120.0
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:fixtures-20261028"
   },
   "fixtures": [
     {

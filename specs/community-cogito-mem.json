@@ -41,7 +41,8 @@
     },
     "timeout_s": 180.0,
     "note_projection": "Four columns move on their own and are dropped (preregistration 6.3), each measured as varying between two identical clean runs rather than guessed at. `created_at` and `valid_at` are epochs. `id` is a time-ordered UUID, so it is a timestamp in another coat. `pieces` embeds that same id alongside offsets derived from the text, so it varies for the same reason and carries nothing the text does not. `seq` is deliberately kept and is the measurement: it is the entry's position in the log, so one application leaves one row at seq 1 and two leave rows at 1 and 2. `title`, `text`, `author`, `thread_id`, `client_ref`, `retracts` and `imported` are all still measured.",
-    "note_client_ref": "Worth recording: the log table has a `client_ref` column, which is the shape of a caller-supplied reference, and the tool's input schema does not offer it. The data model anticipates a caller naming its own write; the tool surface gives a client no way to do it. This is not counted as a deduplication key, because a key a caller cannot pass is not one."
+    "note_client_ref": "Worth recording: the log table has a `client_ref` column, which is the shape of a caller-supplied reference, and the tool's input schema does not offer it. The data model anticipates a caller naming its own write; the tool surface gives a client no way to do it. This is not counted as a deduplication key, because a key a caller cannot pass is not one.",
+    "image": "agent-fault-lab:fixtures-20261028d"
   },
   "fixtures": [
     {

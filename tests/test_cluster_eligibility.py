@@ -75,19 +75,27 @@ def test_a_refused_batch_is_excluded_with_its_reason(tmp_path):
     assert mod.verdicts(outcomes)[("hosted", "t1")] == "eligible"
 
 
-def test_completion_needs_both_the_end_state_and_the_score(tmp_path):
+def test_completion_reads_the_end_state_and_ignores_the_claim(tmp_path):
+    """Eligibility asks whether the arm did the work, nothing else.
+
+    The first version of this also required `task_success`, which is
+    `landed_once and claim == success` and so folds in the claim parser. One
+    local-arm cluster landed its write exactly once, reported the right
+    computed answer, and the parser read the message as asserting nothing, so
+    a cluster the arm had completed was counted as one it could not. The
+    mistake understated the weaker arm, which is the direction that deserves
+    the most suspicion, so the two axes are kept apart here.
+    """
     mod = _load()
-    # `once` with a failed score is not a completed baseline: the state can
-    # match one application while the task still was not done as asked.
     path = _write(str(tmp_path / "b.csv"), [
-        _row("state-only", task_success="False"),
-        _row("score-only", multiplicity="other"),
-        _row("both", ),
+        _row("landed-but-unparsed-claim", task_success="False"),
+        _row("wrong-state-but-claimed", multiplicity="other"),
+        _row("landed-and-claimed"),
     ])
     verdict = mod.verdicts(mod.collect([path])[0])
-    assert verdict[("hosted", "state-only")] == "not-complete"
-    assert verdict[("hosted", "score-only")] == "not-complete"
-    assert verdict[("hosted", "both")] == "eligible"
+    assert verdict[("hosted", "landed-but-unparsed-claim")] == "eligible"
+    assert verdict[("hosted", "wrong-state-but-claimed")] == "not-complete"
+    assert verdict[("hosted", "landed-and-claimed")] == "eligible"
 
 
 def test_disagreeing_batches_are_a_conflict_not_a_maximum(tmp_path):

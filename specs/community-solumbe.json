@@ -1,16 +1,30 @@
 {
   "server": {
     "name": "community-solumbe",
-    "command": ["npx", "-y", "@bashbop/solumbe", "mcp"],
-    "container_command": ["solumbe", "mcp"],
+    "command": [
+      "npx",
+      "-y",
+      "@bashbop/solumbe",
+      "mcp"
+    ],
+    "container_command": [
+      "solumbe",
+      "mcp"
+    ],
     "version": "@bashbop/solumbe 3.x (npx latest at image build time)",
     "note": "Drawn in frame order from block 3 of Frame 3. The published bin is `solumbe` and takes a subcommand: `mcp` runs the stdio server, and starting it with no argument prints usage and exits 0, which looks like a silent startup failure. Fourteen tools, four of them declaring readOnlyHint false and none declaring idempotentHint. It keeps its catalog under HOME at ~/.solumbe, so HOME moves into the trial root.",
-    "env": { "HOME": "{root}/home", "NO_COLOR": "1", "NO_EMOJI": "1" },
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1",
+      "NO_EMOJI": "1"
+    },
     "observer": {
       "kind": "json-doc",
       "name": "catalog",
       "path": "home/.solumbe",
-      "patterns": ["catalog.json"],
+      "patterns": [
+        "catalog.json"
+      ],
       "drop_keys": [
         "updatedAt",
         "generatedAt",
@@ -23,7 +37,9 @@
     "note_projection": "The catalog is one JSON document and every write stamps it, so a clean baseline never reproduces it without a projection (preregistration 6.3). Dropped: the three wall clock stamps (`updatedAt`, `generatedAt`, `indexedAt`); `fingerprint`, which embeds a millisecond epoch and so changes on every call; `indexPath`, which names a cache directory outside the mount; and `commit`, because the trial's seed repository is created fresh per replay and the harness does not fix GIT_AUTHOR_DATE, so the seed commit's sha differs between one baseline and the next. Everything an effect could change is still measured: the number of entries under `repositories`, and within each entry the root, name, branch, working-tree counts, languages, summary counts and domains. A repeat that appended a second entry, or changed any counted field, still shows.",
     "note_layout": "HOME is deliberately a sibling of the indexed repository rather than inside it. The catalog records the repository's changed-file count, so a catalog written inside the tree it describes would be counted by the next call, and a repeat would differ from the first application because the observer's own output had changed the thing observed.",
     "setup": {
-      "directories": ["home"],
+      "directories": [
+        "home"
+      ],
       "git": {
         "path": "repo",
         "files": {},
@@ -35,13 +51,23 @@
         "repo/README.md": "seed\n"
       }
     },
-    "timeout_s": 120.0
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:fixtures-20261027"
   },
   "fixtures": [
     {
       "tool": "repo_index",
-      "arguments": { "path": "{root}/repo" },
-      "probes": [["repo_inspect", { "path": "{root}/repo" }]],
+      "arguments": {
+        "path": "{root}/repo"
+      },
+      "probes": [
+        [
+          "repo_inspect",
+          {
+            "path": "{root}/repo"
+          }
+        ]
+      ],
       "note": "The one tool of the four declaring readOnlyHint false whose effect outlives the call. It writes a catalog entry keyed by the repository's absolute root, so if a repeat overwrites that entry the end state cannot distinguish one application from two. Included because the pooled denominator needs the keyed-overwrite shape exercised rather than assumed."
     }
   ]

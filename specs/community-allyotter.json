@@ -33,7 +33,8 @@
         "home"
       ]
     },
-    "timeout_s": 150.0
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:fixtures-20261028d"
   },
   "fixtures": [
     {

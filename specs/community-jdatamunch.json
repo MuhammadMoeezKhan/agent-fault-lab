@@ -51,7 +51,8 @@
       }
     },
     "timeout_s": 120.0,
-    "note_prelude": "No server prelude. index_local needs no seeded dataset (its first application creates one and the fault is what the trial is about), and a server prelude calling index_local would consume the fault's first occurrence for the two fixtures that test that tool. delete_dataset carries its own prelude instead, which calls a different tool and so takes no fault."
+    "note_prelude": "No server prelude. index_local needs no seeded dataset (its first application creates one and the fault is what the trial is about), and a server prelude calling index_local would consume the fault's first occurrence for the two fixtures that test that tool. delete_dataset carries its own prelude instead, which calls a different tool and so takes no fault.",
+    "image": "agent-fault-lab:fixtures-20261027"
   },
   "fixtures": [
     {
