@@ -194,6 +194,29 @@ def _add_consequence(subparsers: argparse._SubParsersAction) -> None:
             "Q22-A: the main run uses this; the pilot batches did not)"
         ),
     )
+    parser.add_argument(
+        "--resume",
+        action="append",
+        metavar="CSV",
+        default=None,
+        help=(
+            "a CSV of episodes already run, whose cells this batch skips. "
+            "Pass the batch's own --csv to continue a run that was stopped by "
+            "the cap, by a client refusal or by the machine. An errored "
+            "episode counts as run: a reproducible failure is something to "
+            "look at, not work to repeat every night out of the same cap"
+        ),
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        help=(
+            "stop cleanly after N episodes. The nightly cap is the reason "
+            "this exists: without it a long plan is refused outright by the "
+            "budget check instead of running the part that fits"
+        ),
+    )
     parser.add_argument("--daily-cap", type=int, default=35)
     parser.add_argument(
         "--any-hour",
@@ -375,8 +398,22 @@ def _run_consequence(args: argparse.Namespace) -> int:
         if condition != "clean":
             taxonomy.get(condition)
 
-    planned = len(tasks) * len(conditions) * len(arms) * args.repeats
-    from .consequence import ClientRefused, ClientVersionMismatch
+    from .consequence import (
+        ClientRefused,
+        ClientVersionMismatch,
+        RowWriter,
+        plan_cells,
+        recorded_cells,
+        remaining_cells,
+    )
+
+    grid = plan_cells(tasks, conditions, arms, args.repeats)
+    already = recorded_cells(args.resume or [])
+    cells = remaining_cells(grid, already)
+    skipped = len(grid) - len(cells)
+    if args.limit is not None and args.limit >= 0:
+        cells = cells[: args.limit]
+    planned = len(cells)
 
     try:
         agent = _build_agent(
@@ -403,9 +440,17 @@ def _run_consequence(args: argparse.Namespace) -> int:
 
     print(f"agent: {agent.name}")
     print(
-        f"plan: {len(tasks)} tasks x {len(conditions)} conditions x {len(arms)} arms "
-        f"x {args.repeats} repeats = {planned} episodes"
+        f"grid: {len(tasks)} tasks x {len(conditions)} conditions x {len(arms)} arms "
+        f"x {args.repeats} repeats = {len(grid)} episodes"
     )
+    if skipped:
+        print(f"resumed: {skipped} already on disk, {len(grid) - skipped} left")
+    if args.limit is not None and planned < len(grid) - skipped:
+        print(f"limit: running {planned} of them this time")
+    print(f"this batch: {planned} episodes")
+    if not planned:
+        print("nothing left to run")
+        return 0
     if budget is not None:
         print(
             f"budget: {budget.used_today()} used today, {budget.remaining_today()} "
@@ -417,8 +462,8 @@ def _run_consequence(args: argparse.Namespace) -> int:
             print(f"refusing to start: {exc}", file=sys.stderr)
             return 3
     if args.dry_run:
-        for task in tasks:
-            print(f"  {task.id}: target={task.target_tool}")
+        for cell in cells:
+            print(f"  {cell.task:28s} {cell.condition:6s} {cell.arm:20s} #{cell.repeat}")
         return 0
 
     # Q25 guard 1: one trivial question before any approved episode is spent.
@@ -442,46 +487,54 @@ def _run_consequence(args: argparse.Namespace) -> int:
 
     runner = ConsequenceRunner(target, budget=budget, trace_dir=args.trace_dir)
     results = []
-    for task in tasks:
-        for condition in conditions:
+    by_id = {task.id: task for task in tasks}
+    # Rows are appended as each episode finishes, so a run stopped by the cap,
+    # a refusal or the machine keeps what it spent and can be resumed from this
+    # same file.
+    writer = RowWriter(args.csv) if args.csv else None
+    try:
+        for cell in cells:
+            task = by_id[cell.task]
+            condition, arm = cell.condition, cell.arm
             fault = None if condition == "clean" else f"{condition}:{task.target_tool}@1"
-            for arm in arms:
-                for _ in range(args.repeats):
-                    try:
-                        result = runner.run_episode(
-                            task, agent, condition=condition, fault=fault,
-                            arm=arm,
-                        )
-                    except ClientRefused as exc:
-                        print(f"\nstopping the batch: {exc}", file=sys.stderr)
-                        if results:
-                            print(
-                                f"{len(results)} episode(s) ran before this "
-                                "one; they are kept, and the refused episode "
-                                "is not counted as one.",
-                                file=sys.stderr,
-                            )
-                        return 4
-                    results.append(result)
-                    flag = "ERR" if result.error else ""
-                    if args.blind:
-                        # A batch that will be hand labelled must not print its
-                        # own answers. Set D was run without this and the log
-                        # paired every episode with the parser's verdict, its
-                        # observed state, the task, the condition and the arm,
-                        # which is exactly the set of fields the worksheet
-                        # withholds. Reading that log to check the batch had
-                        # finished destroyed the blindness of 30 messages.
-                        print(
-                            f"  {task.id:28s} {condition:6s} {arm:20s} "
-                            f"episode recorded {flag}"
-                        )
-                    else:
-                        print(
-                            f"  {task.id:28s} {condition:6s} {arm:20s} "
-                            f"state={result.multiplicity:6s} "
-                            f"claim={result.claim:12s} {flag}"
-                        )
+            try:
+                result = runner.run_episode(
+                    task, agent, condition=condition, fault=fault, arm=arm,
+                )
+            except ClientRefused as exc:
+                print(f"\nstopping the batch: {exc}", file=sys.stderr)
+                if results:
+                    print(
+                        f"{len(results)} episode(s) ran before this one; they "
+                        "are kept in the CSV, and the refused episode is not "
+                        "counted as one. Resume with --resume on that file.",
+                        file=sys.stderr,
+                    )
+                return 4
+            results.append(result)
+            if writer is not None:
+                writer.write(result)
+            flag = "ERR" if result.error else ""
+            if args.blind:
+                # A batch that will be hand labelled must not print its own
+                # answers. Set D was run without this and the log paired every
+                # episode with the parser's verdict, its observed state, the
+                # task, the condition and the arm, which is exactly the set of
+                # fields the worksheet withholds. Reading that log to check the
+                # batch had finished destroyed the blindness of 30 messages.
+                print(
+                    f"  {task.id:28s} {condition:6s} {arm:20s} "
+                    f"episode recorded {flag}"
+                )
+            else:
+                print(
+                    f"  {task.id:28s} {condition:6s} {arm:20s} "
+                    f"state={result.multiplicity:6s} "
+                    f"claim={result.claim:12s} {flag}"
+                )
+    finally:
+        if writer is not None:
+            writer.close()
 
     if args.blind:
         done = sum(1 for r in results if not r.error)
@@ -491,15 +544,9 @@ def _run_consequence(args: argparse.Namespace) -> int:
             "`label_claims.py worksheet`, label it, then score it."
         )
         if args.csv:
-            import csv as _csv
-
-            with open(args.csv, "w", newline="", encoding="utf-8") as handle:
-                writer = _csv.DictWriter(
-                    handle, fieldnames=list(results[0].as_row())
-                )
-                writer.writeheader()
-                for result in results:
-                    writer.writerow(result.as_row())
+            # Already written, row by row, as the episodes finished. Rewriting
+            # the file here would truncate whatever a resumed run was
+            # continuing.
             print(f"rows: {args.csv} (do not read before labelling)")
         return 0
 
@@ -515,6 +562,10 @@ def _run_consequence(args: argparse.Namespace) -> int:
         "never answered is counted under errored and left out of every "
         "denominator, so a cell with few completed episodes carries little "
         "weight however clean its rates look.",
+        "",
+        "**This table covers the episodes this invocation ran, not the whole "
+        "run.** A resumed batch appends to the CSV and summarises only its own "
+        "part, so pool the CSV rather than adding these tables together.",
         "",
         "| agent | arm | condition | attempted | completed | task success "
         "| duplicate | false success | honest unconfirmed | false failure "
@@ -538,15 +589,7 @@ def _run_consequence(args: argparse.Namespace) -> int:
         print()
         print(markdown)
     if args.csv:
-        import csv as _csv
-
-        with open(args.csv, "w", newline="", encoding="utf-8") as handle:
-            writer = _csv.DictWriter(
-                handle, fieldnames=list(results[0].as_row())
-            )
-            writer.writeheader()
-            for result in results:
-                writer.writerow(result.as_row())
+        print(f"rows: {args.csv} ({len(results)} appended)")
     return 0
 
 

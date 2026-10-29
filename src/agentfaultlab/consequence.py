@@ -30,6 +30,8 @@ spends a shared personal rate limit that cannot be given back.
 
 from __future__ import annotations
 
+import collections
+import csv
 import datetime as dt
 import json
 import os
@@ -1368,3 +1370,129 @@ def summarise(results: Sequence[EpisodeResult]) -> list[dict[str, Any]]:
 
 def _share(count: int, total: int) -> str:
     return "n/a" if total == 0 else f"{count / total:.1%} ({count}/{total})"
+
+
+# --------------------------------------------------------------- the main run
+#
+# The pilot batches were small enough to run in one sitting and to write their
+# rows at the end. The main run is not: 16 task clusters by 3 conditions by 2
+# prompt arms by 3 repeats is 288 episodes an arm, and the hosted arm is capped
+# at 35 a night, so it spans about nine nights and has to survive being stopped
+# by the cap, by a client refusal, or by the machine. Three things follow, and
+# all three are here rather than in the runner so that they can be tested
+# without spending an episode.
+
+
+@dataclass(frozen=True)
+class Cell:
+    """One episode's coordinates in the grid."""
+
+    task: str
+    condition: str
+    arm: str
+    #: 1-based, so a partial cell reads as "2 of 3 done" rather than "1".
+    repeat: int
+
+
+def plan_cells(
+    tasks: Sequence[AgentTask],
+    conditions: Sequence[str],
+    arms: Sequence[str],
+    repeats: int,
+) -> list[Cell]:
+    """The grid, in the order the run works through it.
+
+    Task outermost is deliberate. The primary test is a sign test **over task
+    clusters**, so a run that stops halfway is worth far more if it holds every
+    condition and arm of eight clusters than if it holds the clean cell of
+    sixteen. A cluster-complete prefix is analysable; a balanced fragment is
+    not.
+    """
+    cells = []
+    for task in tasks:
+        for condition in conditions:
+            for arm in arms:
+                for repeat in range(1, repeats + 1):
+                    cells.append(Cell(task.id, condition, arm, repeat))
+    return cells
+
+
+def recorded_cells(paths: Sequence[str]) -> "collections.Counter[tuple[str, str, str]]":
+    """How many episodes each (task, condition, arm) already has on disk.
+
+    **An errored episode counts as recorded.** It is tempting to re-run them,
+    since they contribute to no denominator, but a server or client that fails
+    reproducibly would then be retried every night and would spend a cap that
+    cannot be given back. A reproducible failure is a finding to look at, not
+    work to repeat, so resuming skips it and the run says how many it skipped.
+    """
+    counts: "collections.Counter[tuple[str, str, str]]" = collections.Counter()
+    for path in paths:
+        try:
+            with open(path, newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    key = (row.get("task"), row.get("condition"), row.get("arm"))
+                    if all(part is not None for part in key):
+                        counts[key] += 1  # type: ignore[index]
+        except OSError:
+            continue
+    return counts
+
+
+def remaining_cells(
+    planned: Sequence[Cell],
+    recorded: "collections.Counter[tuple[str, str, str]]",
+) -> list[Cell]:
+    """The planned cells not already on disk, in planned order.
+
+    Matching is by count per (task, condition, arm) rather than by the repeat
+    index, because repeats are interchangeable: nothing distinguishes the
+    second episode of a cell from the third, and keying on the index would
+    re-run a cell whose rows happened to be written in another order.
+    """
+    seen: "collections.Counter[tuple[str, str, str]]" = collections.Counter()
+    out = []
+    for cell in planned:
+        key = (cell.task, cell.condition, cell.arm)
+        seen[key] += 1
+        if seen[key] > recorded.get(key, 0):
+            out.append(cell)
+    return out
+
+
+class RowWriter:
+    """Appends one row per episode, flushed, as each episode finishes.
+
+    The pilot wrote its CSV after the batch. A run that spans nights cannot:
+    the episodes are the expensive thing, and losing nine hours of them to an
+    interrupted process would be a self-inflicted wound. The header is written
+    only when the file is new, so an existing file is continued rather than
+    truncated, which is also what makes `recorded_cells` above a true record of
+    what was spent.
+    """
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self._writer: Optional[Any] = None
+        self._handle: Optional[Any] = None
+
+    def write(self, result: EpisodeResult) -> None:
+        row = result.as_row()
+        if self._handle is None:
+            fresh = not os.path.exists(self.path) or os.path.getsize(self.path) == 0
+            directory = os.path.dirname(self.path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            self._handle = open(self.path, "a", newline="", encoding="utf-8")
+            self._writer = csv.DictWriter(self._handle, fieldnames=list(row))
+            if fresh:
+                self._writer.writeheader()
+        assert self._writer is not None and self._handle is not None
+        self._writer.writerow(row)
+        self._handle.flush()
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+            self._writer = None
