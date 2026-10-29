@@ -237,7 +237,7 @@ def test_no_em_dashes_in_the_module():
         "container.py",
     )
     with open(path, encoding="utf-8") as handle:
-        assert "—" not in handle.read()
+        assert "\u2014" not in handle.read()
 
 
 # ------------------------------------------------------- the spec cannot opt out
