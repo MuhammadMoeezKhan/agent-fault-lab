@@ -4,9 +4,10 @@ from .filesystem import DEFAULT_IGNORE, FilesystemObserver
 from .git import GitObserver
 from .json_doc import JsonDocObserver
 from .sqlite import SqliteObserver
+from .tally import DirectoryTallyObserver
 
 __all__ = [
     "Observer", "Snapshot", "CompositeObserver", "digest", "equal", "diff", "changed",
     "FilesystemObserver", "DEFAULT_IGNORE", "SqliteObserver", "GitObserver",
-    "AppendLogObserver", "JsonDocObserver",
+    "AppendLogObserver", "JsonDocObserver", "DirectoryTallyObserver",
 ]

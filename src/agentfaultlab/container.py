@@ -436,6 +436,7 @@ def build_image(
     *,
     packages: Sequence[str] = (),
     py_packages: Sequence[str] = (),
+    apt_packages: Sequence[str] = (),
     context_dir: Optional[str] = None,
     quiet: bool = True,
 ) -> str:
@@ -458,6 +459,8 @@ def build_image(
         argv.extend(["--build-arg", "PACKAGES=" + " ".join(packages)])
     if py_packages:
         argv.extend(["--build-arg", "PY_PACKAGES=" + " ".join(py_packages)])
+    if apt_packages:
+        argv.extend(["--build-arg", "APT_PACKAGES=" + " ".join(apt_packages)])
     if quiet:
         argv.append("--quiet")
     argv.append(context)

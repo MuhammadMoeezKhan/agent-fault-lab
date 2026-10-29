@@ -1,0 +1,59 @@
+{
+  "server": {
+    "name": "community-dvalincode",
+    "command": [
+      "npx",
+      "-y",
+      "dvalincode",
+      "mcp-serve"
+    ],
+    "container_command": [
+      "dvalincode",
+      "mcp-serve"
+    ],
+    "version": "dvalincode (npm latest at image build time)",
+    "note": "Drawn in frame order from block 3 of Frame 3. All nine tools carry four annotations each, which makes this the second fully annotated server in the sample. The audited tool declares readOnlyHint false, destructiveHint false and idempotentHint false. The published bin needs the `mcp-serve` subcommand and exits 0 without answering when given none, which is indistinguishable from a silent startup failure.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "tally",
+      "name": "workflow-records",
+      "path": "home/.dvalincode/security/workflows",
+      "patterns": [
+        "*.json"
+      ],
+      "drop_keys": [
+        "id",
+        "createdAt",
+        "updatedAt",
+        "completedAt",
+        "at"
+      ]
+    },
+    "note_observer": "This is the first spec to use the tally observer, and it needs it. Each call writes one file whose **name** carries a timestamp and a random suffix, so no two trials ever produce the same path and a filesystem observer reads UNPROVEN every time. Excluding such files was the earlier answer, and the preregistration records that as a known bias; here the stamped file is the entire effect, so excluding it would leave nothing to measure. The tally never looks at a name: it records how many files match and the multiset of their projected contents, so two trials that each wrote one equivalent record compare equal however the files were named, and a trial that wrote two does not.",
+    "note_projection": "Five keys are dropped (preregistration 6.3), and the list was arrived at by comparing two identical clean runs rather than by reading the reply. That distinction cost two attempts: my first guess took the names from the tool's answer (`scanId`, `workflowId`, `startedAt`, `finishedAt`) and not one of them appears in the stored record, and my second missed `at` inside the record's own `history` entries. `id` is dropped at any depth, catching both the workflow and scan ids, which each embed the moment they were minted; `createdAt`, `updatedAt`, `completedAt` and the history entries' `at` are wall clock. `projectId` is kept, being derived from the path, and each finding keeps its `findingId` and `fingerprint`, which are content-derived. The history entries keep everything except their stamp, and lists keep their length, so a repeat that added a history entry still shows. What stays measured is the substance: the state, score, grade, per-severity metrics and every finding.",
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "app.js": "const q = \"SELECT * FROM t WHERE id=\" + userInput;\n"
+      }
+    },
+    "timeout_s": 240.0
+  },
+  "fixtures": [
+    {
+      "tool": "dvalin_begin_verification",
+      "id": "begin_a_verification",
+      "arguments": {
+        "scanners": [
+          "builtin"
+        ]
+      },
+      "note": "Starts a verification and writes one workflow record per call, with the server minting the identifier, so a caller has nothing to collapse a repeat onto. The builtin scanner is named explicitly because it is the one the tool's own schema says needs nothing installed, which keeps the fixture inside the containment profile. The tool declares idempotentHint false, so the declaration says a repeat is unsafe and the trial finds out whether the state agrees."
+    }
+  ]
+}

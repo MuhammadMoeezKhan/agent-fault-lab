@@ -41,6 +41,7 @@ from .audit import Fixture, ServerTarget
 from .observers import (
     AppendLogObserver,
     CompositeObserver,
+    DirectoryTallyObserver,
     FilesystemObserver,
     GitObserver,
     JsonDocObserver,
@@ -86,6 +87,15 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             name=config.get("name", "sqlite"),
             tables=tuple(tables) if tables else None,
             ignore_columns=tuple(config.get("ignore_columns") or ()),
+        )
+    if kind == "tally":
+        # Names are never compared, so a spec using this is saying the files
+        # are interchangeable and only their contents and number matter.
+        return lambda root: DirectoryTallyObserver(
+            os.path.join(root, config.get("path", "")),
+            patterns=tuple(config.get("patterns") or ("*.json",)),
+            drop_keys=tuple(config.get("drop_keys") or ()),
+            name=config.get("name", "tally"),
         )
     if kind == "git":
         ignore = config.get("ignore")

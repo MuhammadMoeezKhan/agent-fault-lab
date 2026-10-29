@@ -5,6 +5,21 @@ RUN apt-get update \
       python3-venv curl make g++ \
  && rm -rf /var/lib/apt/lists/*
 
+# System dependencies a particular server needs at run time, supplied at
+# build time so the trial itself still runs with the network off. This is for
+# a genuine dependency, such as a terminal multiplexer a PTY server shells
+# out to, and not a way to hand a server anything it could not get on its
+# own: it installs from the distribution, carries no credentials, and is
+# recorded in the image like the rest. Without it, a server was parked as
+# unauditable when the only thing missing was a package name.
+ARG APT_PACKAGES=""
+RUN set -u; if [ -n "$APT_PACKAGES" ]; then \
+      apt-get update \
+   && apt-get install -y --no-install-recommends $APT_PACKAGES \
+   && rm -rf /var/lib/apt/lists/*; \
+      mkdir -p /opt/afl; echo "$APT_PACKAGES" > /opt/afl/apt; \
+    fi
+
 RUN curl -fsSL https://astral.sh/uv/0.5.11/install.sh | \
       env UV_INSTALL_DIR=/usr/local/bin sh
 

@@ -1,0 +1,59 @@
+{
+  "server": {
+    "name": "community-heor-agent",
+    "command": [
+      "npx",
+      "-y",
+      "heor-agent-mcp"
+    ],
+    "container_command": [
+      "heor-agent-mcp"
+    ],
+    "version": "heor-agent-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order from the first 150 of Frame 3. Fifty one tools, of which four declare readOnlyHint false; most of the rest are literature and model queries that need the network and are out of scope under the containment profile. The four local ones are annotated, and the audited tool declares idempotentHint true with openWorldHint false, so the declaration is a claim the audit can test.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "prelude": [
+      [
+        "project.create",
+        {
+          "project_id": "audit-fixture",
+          "drug": "testdrug",
+          "indication": "testcondition"
+        }
+      ]
+    ],
+    "note_prelude": "The audited tool writes inside a project workspace, so the workspace has to exist first. The prelude calls a different tool from the fixture, so it takes no fault, and the spec loader enforces that.",
+    "observer": {
+      "kind": "filesystem",
+      "name": "project-tree",
+      "path": "home/.heor-agent/projects",
+      "ignore": [
+        ".DS_Store",
+        "*/project.yaml",
+        "*/wiki/index.md"
+      ]
+    },
+    "note_observer": "The effect is a markdown file written at a caller-named path, so the plain filesystem observer is canonical. Two files written by the prelude are excluded, each measured as varying between two identical clean runs rather than guessed at: `project.yaml` and the starter `wiki/index.md` both record the moment the workspace was created. They are the prelude's output, not the fixture's, so excluding them removes setup noise rather than hiding an effect. The audited tool writes `wiki/notes.md`, a different path, which is measured in full.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 180.0
+  },
+  "fixtures": [
+    {
+      "tool": "knowledge.write",
+      "id": "write_a_wiki_page",
+      "arguments": {
+        "project": "audit-fixture",
+        "path": "wiki/notes.md",
+        "content": "# Notes\n\nA line.\n"
+      },
+      "note": "The write is keyed by a caller-supplied path, and the tool declares idempotentHint true. A repeat should therefore overwrite the same file and leave the same state, which the trial checks rather than assumes. Expected to be indistinguishable, which keeps it out of the duplicate denominator and in the pooled one."
+    }
+  ]
+}
