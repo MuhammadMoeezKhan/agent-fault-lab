@@ -1,0 +1,36 @@
+{
+  "server": {
+    "name": "community-solhint",
+    "command": ["npx", "-y", "solhint-mcp"],
+    "container_command": ["solhint-mcp"],
+    "image": "agent-fault-lab:b4-fixtures-3",
+    "version": "solhint-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order from block 4 of Frame 3. Seven tools, none of them annotated. It bundles a Solidity linter and can rewrite the files it lints.",
+    "note_default_is_safe": "The audited tool does not write unless the caller asks. Called without `write`, it reports the fix it would make and says so plainly: preview only, call again with write true to save it. This is the fifth per-call switch in the sample that decides whether a tool mutates, after a dedup flag, an overwrite flag, a content digest and a dry-run default, and it is the clearest of them: the tool is read-only by default and mutating on request, with one boolean between the two. No annotation on this tool, or anywhere in the protocol, can express that.",
+    "env": { "HOME": "{root}/home", "NO_COLOR": "1" },
+    "observer": {
+      "kind": "filesystem",
+      "name": "source-tree",
+      "path": "",
+      "ignore": ["home", "home/*", ".DS_Store"]
+    },
+    "note_observer": "The effect is a source file rewritten in place, so the plain filesystem observer is canonical and nothing needs projecting.",
+    "setup": {
+      "directories": ["home"],
+      "files": {
+        "c.sol": "pragma solidity ^0.8.0;\ncontract C {\n  uint public x ;\n}\n"
+      }
+    },
+    "timeout_s": 180.0
+  },
+  "fixtures": [
+    {
+      "tool": "fix_file",
+      "id": "fix_with_write_requested",
+      "arguments": { "filePath": "{root}/c.sol", "write": true },
+      "probes": [["lint_file", { "filePath": "{root}/c.sol" }]],
+      "probe_stable": true,
+      "note": "The mutating path, reached only by passing `write: true`. The fix is idempotent by construction: it rewrites a declaration to its explicit form, and the rewritten file no longer matches the rule, so a repeat finds nothing to change. Expected indistinguishable, which keeps it out of the duplicate denominator and in the pooled one. `probe_stable` is set because the linter's output is a rule report over the file's contents with no timestamp or generated id; it was checked against the real output. Note the probe reports remaining violations rather than the file, so it shows that something changed and cannot show how many times."
+    }
+  ]
+}
