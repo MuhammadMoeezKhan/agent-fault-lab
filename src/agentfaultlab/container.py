@@ -140,6 +140,22 @@ class Containment:
     pids: int = 512
     network: str = "none"
     read_only: bool = True
+    #: A hard ceiling, in seconds, on how long the container may live,
+    #: enforced inside the container rather than by the harness.
+    #:
+    #: `--rm` was already set, and it was not enough: two probe containers
+    #: outlived their runs by 22 and 45 hours because the server inside them
+    #: never exited and nothing was left watching. Every harness-side timeout
+    #: depends on the harness still being there to apply it, which is exactly
+    #: what is missing when a session ends or is interrupted. Wrapping the
+    #: command in the container's own `timeout` makes the limit survive the
+    #: harness going away, and `--rm` then cleans up.
+    #:
+    #: Set generously: it is a backstop against a leak, not a per-call
+    #: deadline, and a trial that legitimately takes minutes must not be cut
+    #: short. `None` disables it and is only for a caller that has its own
+    #: container-side limit.
+    lifetime_s: Optional[int] = 1800
     extra_run_args: tuple[str, ...] = field(default_factory=tuple)
 
     def translate(self, value: str) -> str:
@@ -256,7 +272,20 @@ class Containment:
             argv.append(f"--env={key}={self.translate(value)}")
         argv.extend(self.extra_run_args)
         argv.append(self.image)
-        argv.extend(self.translate(part) for part in command)
+        inner = [self.translate(part) for part in command]
+        if self.lifetime_s:
+            # `--signal=KILL` because a server that ignores SIGTERM is exactly
+            # the kind that leaks.
+            #
+            # No `--` separator: timeout's synopsis is
+            # `timeout [OPTION] DURATION COMMAND [ARG]...`, so it stops
+            # reading options at the duration and a server's own flags are
+            # already safe after the command. Adding `--` made timeout treat
+            # the separator itself as the command and every container exited
+            # 127. The argv-shape test passed while nothing could start,
+            # which is why a real contained run is part of this check.
+            inner = ["timeout", "--signal=KILL", str(self.lifetime_s)] + inner
+        argv.extend(inner)
         return argv
 
 

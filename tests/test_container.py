@@ -199,7 +199,12 @@ def test_an_ordinary_variable_still_passes(tmp_path):
 
 def test_the_image_comes_before_the_command(tmp_path):
     argv = make(tmp_path).run_argv(["npx", "-y", "thing"])
-    assert argv[argv.index("afl:test") + 1 :] == ["npx", "-y", "thing"]
+    after_image = argv[argv.index("afl:test") + 1 :]
+    # The command is wrapped in the container's own timeout, so it no longer
+    # follows the image directly. What matters is that it comes after, in
+    # order, and unaltered.
+    assert after_image[:3] == ["timeout", "--signal=KILL", "1800"]
+    assert after_image[3:] == ["npx", "-y", "thing"]
 
 
 def test_an_empty_command_is_refused(tmp_path):
@@ -643,3 +648,48 @@ def test_a_host_temp_directory_is_not_forwarded_into_the_container():
     # The container still gets a writable temp directory of its own.
     assert "--tmpfs=/tmp:exec" in argv
     assert "--env=KEEP_ME=yes" in argv
+
+
+# -------------------------------------------------------- the lifetime ceiling
+
+def test_a_hung_server_cannot_outlive_its_run(tmp_path):
+    """The container limits its own lifetime, not the harness.
+
+    `--rm` was already set and was not enough: two probe containers outlived
+    their runs by 22 and 45 hours because the server inside never exited and
+    nothing was left watching. Every harness-side timeout needs the harness
+    to still be there to apply it, which is exactly what is missing when a
+    session ends or is interrupted, so the limit is enforced inside.
+    """
+    argv = make(tmp_path).run_argv(["server"])
+    tail = argv[argv.index("afl:test") + 1 :]
+    assert tail[0] == "timeout"
+    # SIGKILL, because a server that ignores SIGTERM is the kind that leaks.
+    assert "--signal=KILL" in tail[:3]
+    # No `--` separator: timeout stops reading options at the duration, and
+    # passing one made it treat the separator as the command, so every
+    # container exited 127 while this argv-shape test still passed.
+    assert "--" not in tail
+    assert "--rm" in argv
+
+
+def test_the_ceiling_is_configurable_and_can_be_turned_off(tmp_path):
+    argv = make(tmp_path, lifetime_s=60).run_argv(["server"])
+    tail = argv[argv.index("afl:test") + 1 :]
+    assert tail[:3] == ["timeout", "--signal=KILL", "60"]
+
+    bare = make(tmp_path, lifetime_s=None).run_argv(["server"])
+    assert bare[bare.index("afl:test") + 1 :] == ["server"]
+
+
+def test_the_ceiling_is_generous_enough_not_to_cut_a_real_trial_short(tmp_path):
+    # It is a backstop against a leak, not a per-call deadline: the slowest
+    # legitimate local-arm episode in this study ran about 321 seconds, and a
+    # whole fixture's baselines are several of those.
+    assert Containment(image="i", mount=str(tmp_path)).lifetime_s >= 900
+
+
+def test_a_server_flag_is_not_eaten_by_the_wrapper(tmp_path):
+    argv = make(tmp_path).run_argv(["solumbe", "mcp", "--json"])
+    tail = argv[argv.index("afl:test") + 1 :]
+    assert tail[3:] == ["solumbe", "mcp", "--json"]
