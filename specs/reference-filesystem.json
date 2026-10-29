@@ -39,7 +39,8 @@
           }
         ]
       ],
-      "note": "overwrite: one application and two are indistinguishable by design"
+      "note": "overwrite: one application and two are indistinguishable by design `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     },
     {
       "tool": "edit_file",
@@ -60,7 +61,8 @@
           }
         ]
       ],
-      "note": "an insert, so a second application is visible if it is accepted"
+      "note": "an insert, so a second application is visible if it is accepted `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     },
     {
       "tool": "create_directory",
@@ -75,7 +77,8 @@
           }
         ]
       ],
-      "note": "declared idempotent; mkdir -p semantics"
+      "note": "declared idempotent; mkdir -p semantics `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     },
     {
       "tool": "move_file",
@@ -91,7 +94,8 @@
           }
         ]
       ],
-      "note": "declared not idempotent; a second move has nothing to move"
+      "note": "declared not idempotent; a second move has nothing to move `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     }
   ]
 }

@@ -391,6 +391,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
                 ),
                 prelude=_prelude(raw.get("prelude"), allow_capture=True),
                 probe_drop_keys=tuple(raw.get("probe_drop_keys") or ()),
+                probe_stable=bool(raw.get("probe_stable", False)),
                 note=raw.get("note", ""),
                 id=raw.get("id", ""),
             )

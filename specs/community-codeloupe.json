@@ -53,7 +53,8 @@
           }
         ]
       ],
-      "note": "An append with no key and no precondition: the canonical duplicate-prone shape. Pairs with the fixture below, which passes one extra optional field and changes nothing else."
+      "note": "An append with no key and no precondition: the canonical duplicate-prone shape. Pairs with the fixture below, which passes one extra optional field and changes nothing else. `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     },
     {
       "tool": "edit_file",
@@ -72,7 +73,8 @@
           }
         ]
       ],
-      "note": "The same call plus `expected_hash`, a compare-and-swap precondition naming the SHA-256 the caller last saw. The digest is of the seeded file and is written out here rather than captured, because the seed is fixed by this spec and so the digest is a constant of the fixture, not a value minted at run time. A first application changes the file and so changes its digest, which is the mechanism under test."
+      "note": "The same call plus `expected_hash`, a compare-and-swap precondition naming the SHA-256 the caller last saw. The digest is of the seeded file and is written out here rather than captured, because the seed is fixed by this spec and so the digest is a constant of the fixture, not a value minted at run time. A first application changes the file and so changes its digest, which is the mechanism under test. `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     },
     {
       "tool": "create_file",
@@ -89,7 +91,8 @@
           }
         ]
       ],
-      "note": "A create with `overwrite` left at its default. Included because the pooled denominator needs the create shape, and because this server decides overwrite behaviour by a caller-passed boolean, the same per-call shape a per-tool hint cannot express."
+      "note": "A create with `overwrite` left at its default. Included because the pooled denominator needs the create shape, and because this server decides overwrite behaviour by a caller-passed boolean, the same per-call shape a per-tool hint cannot express. `probe_stable` is set because this fixture's read tools return only content derived from the call: no timestamp, no generated identifier, nothing that moves on its own. It was checked against the tool's actual output, not assumed from its name. The flag exists because an empty drop list cannot say 'I looked and there was nothing to drop', and without it a genuine duplicate showing in the read path would be recorded as unknown forever.",
+      "probe_stable": true
     }
   ]
 }

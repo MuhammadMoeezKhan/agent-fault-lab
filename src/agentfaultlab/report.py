@@ -134,10 +134,20 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
     unconfirmable = {
         key for key, group in mutating.items() if any(row.confirmable is False for row in group)
     }
-    duplicate_hidden = {
-        key
+    # Only fixtures where a duplicate exists in the state can answer this.
+    # Where the repeat is absorbed, S1 equals S2 and the read tools of course
+    # show no difference: counting those as "hidden" would have turned a
+    # trivial truth into a headline. They are excluded, and so are unproven
+    # rows, which say nothing either way.
+    answerable = {
+        key: group
         for key, group in mutating.items()
-        if group[0].duplicate_visible is False
+        if group[0].repeat_distinguishable
+        and group[0].duplicate_visible is not None
+        and not all(row.verdict == UNPROVEN for row in group)
+    }
+    duplicate_hidden = {
+        key for key, group in answerable.items() if group[0].duplicate_visible is False
     }
     with_dedup = {key for key, group in mutating.items() if group[0].dedup_argument}
     offers_precondition = {
@@ -195,7 +205,8 @@ def summarise(verdicts: Iterable[ToolVerdict]) -> dict[str, Any]:
         "with_dedup_argument": len(with_dedup),
         "dedup_rate": _rate(len(with_dedup), len(mutating)),
         "duplicate_hidden": len(duplicate_hidden),
-        "duplicate_hidden_rate": _rate(len(duplicate_hidden), len(mutating)),
+        "duplicate_hidden_of": len(answerable),
+        "duplicate_hidden_rate": _rate(len(duplicate_hidden), len(answerable)),
         "offers_precondition": len(offers_precondition),
         "offers_precondition_rate": _rate(len(offers_precondition), len(mutating)),
         "uses_precondition": len(uses_precondition),

@@ -240,6 +240,13 @@ class Fixture:
     #: duplicate from a timestamp that moved between two trials, and the
     #: answer is recorded as unknown instead of guessed.
     probe_drop_keys: tuple[str, ...] = ()
+    #: An explicit assertion that this fixture's read tools return nothing
+    #: that varies with the clock, so a difference between S1 and S2 is the
+    #: duplicate and not the time. It exists because `probe_drop_keys` cannot
+    #: express "I checked, and there was nothing to drop": an empty list is
+    #: indistinguishable from never having looked, and leaving those fixtures
+    #: permanently unknown would make the measure unreportable.
+    probe_stable: bool = False
     note: str = ""
     #: Distinguishes two fixtures for the same tool. One SQL write tool can
     #: be an INSERT in one fixture and an UPDATE in another, and those behave
@@ -696,7 +703,10 @@ class Audit:
         # the study's own question, so it is measured rather than inferred
         # from `confirmable`.
         duplicate_visible = _duplicate_visible(
-            probes.get("after"), probes_twice.get("after"), fixture.probe_drop_keys
+            probes.get("after"),
+            probes_twice.get("after"),
+            fixture.probe_drop_keys,
+            declared=bool(fixture.probe_drop_keys or fixture.probe_stable),
         )
         return {
             "s0": before_once,
@@ -1027,7 +1037,10 @@ def _strip_keys(value: Any, drop: tuple[str, ...]) -> Any:
 
 
 def _duplicate_visible(
-    after_once: Any, after_twice: Any, drop: tuple[str, ...]
+    after_once: Any,
+    after_twice: Any,
+    drop: tuple[str, ...] = (),
+    declared: Optional[bool] = None,
 ) -> Optional[bool]:
     """Whether the server's read tools tell one application from two.
 
@@ -1048,7 +1061,9 @@ def _duplicate_visible(
         return None
     if _strip_keys(after_once, drop) == _strip_keys(after_twice, drop):
         return False
-    return True if drop else None
+    if declared is None:
+        declared = bool(drop)
+    return True if declared else None
 
 
 def _annotation_violations(

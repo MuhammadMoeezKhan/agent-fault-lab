@@ -47,7 +47,9 @@
         ".stashpad/memories/.stashpad-store.json": "{\n  \"format\": 1,\n  \"written_by\": \"stashpad 0.2.2\"\n}\n",
         ".stashpad/memories/seed-one.md": "---\nid: seed-one\nkind: fact\ncreated_at: 2026-01-01\nvalid_from: 2026-01-01\nvalid_to: null\nsupersedes: null\nsuperseded_by: null\nsource_type: human\nsource_ref: the audit fixture\ntrust: human-confirmed\nlast_confirmed_at: 2026-01-01\n---\ninvoice 99 was paid\n"
       }
-    }
+    },
+    "image": "agent-fault-lab:audit-20261026",
+    "note_image": "Named explicitly because the default audit image does not contain this package: the batch of 2026-10-29 started it from the default and got status 127 with the binary missing. A spec that does not name its image is only reproducible by accident, which is the reason every spec now names one."
   },
   "fixtures": [
     {

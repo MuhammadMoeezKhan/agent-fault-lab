@@ -68,7 +68,10 @@
           }
         ]
       ],
-      "note": "The default call, with `incremental` left at its default of true. Paired with the fixture below, which passes `incremental: false` and changes nothing else, so the two differ only in that argument and the repeat behaviour of each is exercised separately."
+      "note": "The default call, with `incremental` left at its default of true. Paired with the fixture below, which passes `incremental: false` and changes nothing else, so the two differ only in that argument and the repeat behaviour of each is exercised separately. The probe drops `indexed_at`, the only clock in the history tool's output; `snapshot_count` and the per-snapshot rows are what distinguish one application from two.",
+      "probe_drop_keys": [
+        "indexed_at"
+      ]
     },
     {
       "tool": "index_local",
@@ -84,7 +87,10 @@
           }
         ]
       ],
-      "note": "The same tool with `incremental: false` and nothing else changed, so this fixture and the one above isolate a single caller-passed argument. The history log carries one line per index that ran, and get_dataset_history reports a snapshot count, so a second application is visible in the end state if it is applied."
+      "note": "The same tool with `incremental: false` and nothing else changed, so this fixture and the one above isolate a single caller-passed argument. The history log carries one line per index that ran, and get_dataset_history reports a snapshot count, so a second application is visible in the end state if it is applied. The probe drops `indexed_at`, the only clock in the history tool's output; `snapshot_count` and the per-snapshot rows are what distinguish one application from two.",
+      "probe_drop_keys": [
+        "indexed_at"
+      ]
     },
     {
       "tool": "delete_dataset",

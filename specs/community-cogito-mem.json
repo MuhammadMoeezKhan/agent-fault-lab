@@ -60,7 +60,14 @@
           }
         ]
       ],
-      "note": "An append with no key in the arguments: the duplicate-prone shape. The tool declares idempotentHint false, so the declaration says a repeat is not safe, and this fixture finds out whether the state agrees. It is one of the few servers in the sample that both declares the hint and offers a read tool, so the row can also say whether a caller could have checked."
+      "note": "An append with no key in the arguments: the duplicate-prone shape. The tool declares idempotentHint false, so the declaration says a repeat is not safe, and this fixture finds out whether the state agrees. It is one of the few servers in the sample that both declares the hint and offers a read tool, so the row can also say whether a caller could have checked. The probe drops are declared from the read tool's actual output: it returns a time-ordered UUID, two stamps on each item, an `as_of` for the query and an elapsed time. The `items` list keeps its length, which is what a second note shows up in.",
+      "probe_drop_keys": [
+        "id",
+        "valid_at",
+        "created_at",
+        "as_of",
+        "took_ms"
+      ]
     }
   ]
 }

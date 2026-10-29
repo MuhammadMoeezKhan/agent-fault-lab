@@ -152,14 +152,20 @@ def describe(rows: list[dict[str, Any]], *, intervals: bool = True) -> dict[str,
         # Counted over fixtures that have a read path at all, because a
         # fixture with no probe cannot answer the question either way and
         # pooling it with the ones that can would understate the gap.
+        # Only fixtures where a duplicate exists in the state can answer this.
+        # Where the repeat is absorbed, S1 equals S2 and the read tools of
+        # course show no difference, so counting those as "hidden" would turn
+        # a trivial truth into a headline.
         "duplicate_hidden": rate(
             len([
                 k for k, g in mutating.items()
-                if str(g[0].get("duplicate_visible")).lower() == "false"
+                if str(g[0].get("repeat_distinguishable")).lower() == "true"
+                and str(g[0].get("duplicate_visible")).lower() == "false"
             ]),
             len([
                 k for k, g in mutating.items()
-                if str(g[0].get("duplicate_visible")).lower() in ("true", "false")
+                if str(g[0].get("repeat_distinguishable")).lower() == "true"
+                and str(g[0].get("duplicate_visible")).lower() in ("true", "false")
             ]),
             interval=intervals,
         ),
@@ -213,7 +219,8 @@ def main() -> int:
         f"{pooled['declares_idempotent_hint']} of mutating fixtures",
         f"- takes a caller supplied deduplication key: {pooled['dedup_argument']}",
         f"- a duplicate is invisible through the server's own read tools: "
-        f"{pooled['duplicate_hidden']} (of the fixtures with a read path)",
+        f"{pooled['duplicate_hidden']} (of the testable fixtures whose read "
+        f"path can answer)",
         f"- offers a compare-and-swap precondition: {pooled['offers_precondition']}",
         f"- and the fixture passed one: {pooled['uses_precondition']}",
         f"- safe because the backend refused the repeat: "
