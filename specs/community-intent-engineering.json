@@ -1,0 +1,29 @@
+{
+  "server": {
+    "name": "community-intent-engineering",
+    "command": ["npx", "-y", "@swins/intent-engineering-mcp"],
+    "container_command": ["intent-engineering-mcp"],
+    "version": "@swins/intent-engineering-mcp (npm latest at image build time)",
+    "version_note": "the published bin is intent-engineering-mcp, which is not the last segment of the scoped package name, so the container command names it explicitly",
+    "note": "Drawn in frame order from the first 150 of Frame 3. Its tools declare no annotations. The audited tool's own description says it *returns* a scaffold, and it does: nothing of the scaffold reaches disk. What reaches disk is one line in an append-only audit log, written on every call, which is the durable effect and is not mentioned in the tool's description at all.",
+    "env": { "HOME": "{root}/home", "NO_COLOR": "1" },
+    "observer": {
+      "kind": "append-log",
+      "name": "audit-log",
+      "path": "home/.intent-engineering-mcp",
+      "patterns": ["audit.jsonl"],
+      "drop_keys": ["ts"]
+    },
+    "note_projection": "One key is dropped (preregistration 6.3): `ts`, a wall clock stamp. Everything else in the line is measured, and it is all derived from the call rather than the clock: the tool name, the input source, the input length and the outcome. Two identical calls therefore write two identical lines once the stamp is gone, so the only thing distinguishing one application from two is the line count, which is what the append-log observer counts.",
+    "setup": { "directories": ["home"] },
+    "timeout_s": 150.0
+  },
+  "fixtures": [
+    {
+      "tool": "generate_intent_spec_scaffold",
+      "id": "scaffold_logs_a_line",
+      "arguments": { "kind": "blank" },
+      "note": "A read-shaped tool with a write hidden behind it. It is in the sample because of that mismatch: a client reading the description would place this among its safe calls, and a retry after an ambiguous timeout adds a second audit line. No probe: no read tool reports the log, so this is recorded as unconfirmable rather than confirmed through a tool that measures something else."
+    }
+  ]
+}
