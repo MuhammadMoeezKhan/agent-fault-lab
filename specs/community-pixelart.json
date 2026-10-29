@@ -1,0 +1,36 @@
+{
+  "server": {
+    "name": "community-pixelart",
+    "command": ["uvx", "ssyubix-pixelart-mcp"],
+    "container_command": ["ssyubix-pixelart-mcp"],
+    "image": "agent-fault-lab:b4-fixtures-2",
+    "version": "ssyubix-pixelart-mcp (PyPI, uvx latest at image build time)",
+    "note": "Drawn in frame order from block 4 of Frame 3 (candidates 301 to 450). Twenty four tools, sixteen of them not declared read only, and every one of those sixteen carries all four annotations. That makes it the third fully annotated server in the sample, and the audit can test its declarations rather than measure a gap in them. Every tool takes its arguments wrapped in a single `params` object.",
+    "note_state": "Almost all of its state is held in process memory: a canvas created by one call is visible to a read tool in the same session and never reaches disk, so a replay oracle cannot see it. One tool is the exception, and it is the one audited here: the export writes a PNG and a metadata JSON to a caller-named directory. That split is why this server is auditable at all, and it is also the reason the canvas and tileset calls belong in the prelude rather than in a fixture of their own.",
+    "env": { "HOME": "{root}/home", "NO_COLOR": "1" },
+    "prelude": [
+      ["pixelart_create_canvas", { "params": { "canvas_id": "tile1", "width": 8, "height": 8 } }],
+      ["pixelart_create_tileset", { "params": { "tileset_id": "ts1", "tile_width": 8, "tile_height": 8, "columns": 2, "rows": 2 } }]
+    ],
+    "note_prelude": "The export needs a tileset, and a tileset needs a canvas. Both prelude calls are different tools from the fixture's, so neither takes the fault, and the spec loader enforces that.",
+    "observer": {
+      "kind": "filesystem",
+      "name": "exported-sheet",
+      "path": "",
+      "ignore": ["home", "home/*", ".DS_Store"]
+    },
+    "note_observer": "The effect is two files written at a caller-named path, so the plain filesystem observer is canonical and no projection is needed: the PNG is rendered from the tileset's contents and the metadata JSON records the geometry, neither carrying a timestamp. HOME is moved into the trial root to keep any stray config out of the real one, and is then excluded because nothing the audited tool does writes there.",
+    "setup": { "directories": ["home"] },
+    "timeout_s": 180.0
+  },
+  "fixtures": [
+    {
+      "tool": "pixelart_export_tileset",
+      "id": "export_a_tileset",
+      "arguments": { "params": { "tileset_id": "ts1", "output_dir": "{root}", "name": "sheet" } },
+      "probes": [["pixelart_list_tilesets", { "params": {} }]],
+      "probe_stable": true,
+      "note": "A write to a caller-named path and filename, declaring idempotentHint false. The name is the caller's, so a repeat has a key to collapse onto and the declaration says it will not: the trial finds out which. `probe_stable` is set because the read tool lists tilesets from memory and returns only their declared geometry, with no timestamp or generated identifier in the output; it was checked against the tool's real output rather than assumed. Note the probe reports the in-memory tileset rather than the exported files, so it can say the tileset exists and cannot say how many times it was written."
+    }
+  ]
+}
