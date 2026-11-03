@@ -58,6 +58,13 @@ def _add_proxy(subparsers: argparse._SubParsersAction) -> None:
         "--mount",
         help="host directory to mount as the container's workdir (default: --cwd)",
     )
+    parser.add_argument(
+        "--run-label",
+        help=(
+            "label the container with this run id, so the caller can remove "
+            "it if this proxy is killed before it can stop the server"
+        ),
+    )
 
 
 def _add_check(subparsers: argparse._SubParsersAction) -> None:
@@ -629,6 +636,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cwd=args.cwd,
             contain=args.contain,
             mount=args.mount,
+            run_label=args.run_label,
         )
     if command == "check":
         return _run_check(args)

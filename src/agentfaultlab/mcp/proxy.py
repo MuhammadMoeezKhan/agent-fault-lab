@@ -265,6 +265,7 @@ def run_proxy(
     cwd: Optional[str] = None,
     contain: Optional[str] = None,
     mount: Optional[str] = None,
+    run_label: Optional[str] = None,
 ) -> int:
     """Entry point for `agent-fault-lab proxy`. Relays this process's stdio."""
     import sys
@@ -285,6 +286,7 @@ def run_proxy(
                 "fault": fault,
                 "contained": bool(contain),
                 "image": contain or None,
+                "run_label": run_label or None,
             },
         )
         if trace_path
@@ -295,7 +297,11 @@ def run_proxy(
         from ..container import Containment, require
 
         require()
-        containment = Containment(image=contain, mount=mount or cwd or os.getcwd())
+        containment = Containment(
+            image=contain,
+            mount=mount or cwd or os.getcwd(),
+            run_label=run_label,
+        )
     proxy = StdioFaultProxy(
         command, plan=plan, trace=trace, cwd=cwd, containment=containment
     )

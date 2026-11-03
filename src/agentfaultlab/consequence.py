@@ -37,12 +37,14 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Protocol, Sequence
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .audit import Fixture, ServerTarget, classify
 from .mcp.injector import FaultPlan
@@ -541,15 +543,14 @@ class ClaudeCodeAgent:
         if self.disable_slash_commands:
             command.append("--disable-slash-commands")
         try:
-            completed = subprocess.run(
+            # In its own process group, so a timeout takes the proxy and the
+            # container with it rather than orphaning them. Stdin is closed
+            # because otherwise it waits on inherited stdin and warns that no
+            # data arrived, delaying every episode by seconds.
+            completed = _run_whole_group(
                 command,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_s,
+                timeout_s=self.timeout_s,
                 cwd=cwd,
-                # Without this it waits on inherited stdin and warns that no
-                # data arrived, delaying every episode by seconds.
-                stdin=subprocess.DEVNULL,
                 env=self._env(),
             )
         except subprocess.TimeoutExpired:
@@ -1071,6 +1072,73 @@ def _read(text: str) -> str:
 
 # -------------------------------------------------------------------- episodes
 
+def _run_whole_group(
+    command: Sequence[str],
+    *,
+    timeout_s: float,
+    cwd: Optional[str],
+    env: Mapping[str, str],
+) -> subprocess.CompletedProcess[str]:
+    """Run a command in its own process group, and time out the whole group.
+
+    `subprocess.run(timeout=...)` kills the child it started and nothing else.
+    The client we start spawns the fault proxy, and the proxy spawns the
+    container, so on a timeout the client died and its two descendants did not:
+    on 2026-10-30 a proxy and its container outlived their episode by four
+    hours, holding the trial directory open while later episodes ran.
+
+    A new session puts the client and everything it spawns in one process
+    group, which can then be signalled as a unit. SIGTERM first, so a proxy
+    gets the chance to stop its server and write its trace, then SIGKILL for
+    whatever ignored it.
+
+    Raises `subprocess.TimeoutExpired`, like `subprocess.run`, so the caller's
+    timeout handling does not change.
+    """
+    proc = subprocess.Popen(
+        list(command),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        cwd=cwd,
+        env=dict(env),
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        _signal_group(proc, signal.SIGTERM)
+        try:
+            proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            _signal_group(proc, signal.SIGKILL)
+            try:
+                proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        raise
+    return subprocess.CompletedProcess(list(command), proc.returncode, out, err)
+
+
+def _signal_group(proc: "subprocess.Popen[str]", sig: int) -> None:
+    """Signal the process group `proc` leads, falling back to the process.
+
+    `os.killpg` on a group that has already gone raises ProcessLookupError,
+    which is the normal case for a client that exited while we were deciding
+    to kill it, so it is not an error here. Windows has no process groups in
+    this sense and the engine is not run there, but the fallback keeps the
+    call honest instead of crashing the episode's cleanup.
+    """
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except (ProcessLookupError, PermissionError, OSError, AttributeError):
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
+
+
 class ConsequenceRunner:
     """Runs episodes for one server target."""
 
@@ -1094,6 +1162,25 @@ class ConsequenceRunner:
         )
         self.settle_s = settle_s
         self._oracles: dict[str, dict[str, Snapshot]] = {}
+        #: Ids of containers that outlived their episode and had to be removed.
+        #: A leak is a defect, so it is accumulated and reportable rather than
+        #: cleaned up quietly.
+        self.leaked_containers: list[str] = []
+
+    def _reap(self, run_label: str) -> list[str]:
+        """Remove anything this episode's label still matches.
+
+        Only for a contained target: an engine fixture starts no container, so
+        there is nothing to look for and no reason to pay for a `docker ps`.
+        """
+        if not self.target.contained:
+            return []
+        from .container import reap
+
+        try:
+            return reap(run_label)
+        except Exception:  # pragma: no cover - cleanup must never mask a result
+            return []
 
     # ------------------------------------------------------------------ oracle
 
@@ -1174,6 +1261,10 @@ class ConsequenceRunner:
             self.budget.check(1)
         states = self.oracle(task)
         root = tempfile.mkdtemp(prefix="afl-episode-")
+        # One label per episode, so whatever this episode starts can be found
+        # and removed when it ends, however it ends. Nothing in the label is
+        # read back as data: it exists to be matched exactly.
+        run_label = f"{os.path.basename(root)}-{uuid.uuid4().hex[:8]}"
         started = time.monotonic()
         result = EpisodeResult(
             task=task.id,
@@ -1203,7 +1294,9 @@ class ConsequenceRunner:
                 if self.trace_dir
                 else None
             )
-            self._write_mcp_config(config_path, root, fault, trace_path, agent)
+            self._write_mcp_config(
+                config_path, root, fault, trace_path, agent, run_label=run_label
+            )
             if self.budget is not None:
                 self.budget.record(1)
             instruction = _substitute_text(
@@ -1224,6 +1317,17 @@ class ConsequenceRunner:
             result.error = f"{type(exc).__name__}: {exc}"
         finally:
             result.duration_s = round(time.monotonic() - started, 2)
+            leaked = self._reap(run_label)
+            if leaked:
+                # Counted on the runner and printed, not added to the row: the
+                # main run is in progress against a frozen CSV schema, and a
+                # new column would not match the header already on disk.
+                self.leaked_containers.extend(leaked)
+                print(
+                    f"reaped {len(leaked)} container(s) left by episode "
+                    f"{task.id}/{condition}/{arm}: {', '.join(leaked)}",
+                    file=sys.stderr,
+                )
             shutil.rmtree(root, ignore_errors=True)
 
         result.claim = parse_claim(result.final_message)
@@ -1262,6 +1366,7 @@ class ConsequenceRunner:
         fault: Optional[str],
         trace_path: Optional[str],
         agent: Agent,
+        run_label: Optional[str] = None,
     ) -> None:
         """An MCP config that points the agent at the server via the proxy."""
         command = list(self.target.launch_command(root))
@@ -1278,6 +1383,8 @@ class ConsequenceRunner:
         containment = self.target.containment(root)
         if containment is not None:
             arguments += ["--contain", containment.image, "--mount", root]
+            if run_label:
+                arguments += ["--run-label", run_label]
         arguments += ["--", *command]
         server_name = getattr(agent, "server_name", "target")
         config = {

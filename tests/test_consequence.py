@@ -695,7 +695,7 @@ def test_a_client_refusal_is_not_an_episode(monkeypatch, tmp_path):
             }
         )
 
-    monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
+    monkeypatch.setattr(consequence, "_run_whole_group", lambda *a, **k: Done())
     with pytest.raises(consequence.ClientRefused) as caught:
         agent.run("do the task", str(tmp_path / "mcp.json"), str(tmp_path))
     assert "session limit" in str(caught.value)
@@ -719,7 +719,7 @@ def test_an_ordinary_reply_is_still_an_episode(monkeypatch, tmp_path):
             }
         )
 
-    monkeypatch.setattr(consequence.subprocess, "run", lambda *a, **k: Done())
+    monkeypatch.setattr(consequence, "_run_whole_group", lambda *a, **k: Done())
     answer = agent.run("do the task", str(tmp_path / "mcp.json"), str(tmp_path))
     assert answer["turns"] == 4
     assert "recorded once" in answer["text"]

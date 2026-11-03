@@ -80,6 +80,19 @@ BLOCKED_ENV = (
 #: tmpfs with exec, which is what a server gets when these are unset.
 HOST_TEMP_ENV = ("TMPDIR", "TMP", "TEMP")
 
+#: The label key every container started by this engine carries, so a leaked
+#: one can be found and removed by the run that leaked it.
+#:
+#: `--rm` and the container-side `timeout` between them cover a server that
+#: hangs inside a container the harness is still watching. Neither covers the
+#: case found on 2026-10-30: an agent episode timed out, the harness killed the
+#: client, and the fault proxy the client had spawned was never signalled, so
+#: the proxy and its container outlived the episode by four hours. `--rm` only
+#: fires when the container exits, and the container-side ceiling is a backstop
+#: measured in half-hours, not an episode boundary. A label gives the episode a
+#: handle on the container it started, which is what `reap` uses.
+RUN_LABEL = "afl.run"
+
 
 class ContainerError(RuntimeError):
     """Docker is missing, not running, or refused a build."""
@@ -155,7 +168,18 @@ class Containment:
     #: deadline, and a trial that legitimately takes minutes must not be cut
     #: short. `None` disables it and is only for a caller that has its own
     #: container-side limit.
+    #:
+    #: It assumes GNU `timeout`, which the audit image has (Debian). An image
+    #: with BusyBox instead rejects `--signal=KILL` and nothing starts, so a
+    #: caller supplying its own base image either keeps coreutils or passes
+    #: `None` and enforces its own ceiling.
     lifetime_s: Optional[int] = 1800
+    #: An identifier for the run that started this container, attached as a
+    #: docker label. Set it per episode (or per trial) and the caller can
+    #: force-remove whatever is still running under that label when the episode
+    #: ends, however it ended. `None` attaches no label and nothing can be
+    #: reaped by one.
+    run_label: Optional[str] = None
     extra_run_args: tuple[str, ...] = field(default_factory=tuple)
 
     def translate(self, value: str) -> str:
@@ -258,6 +282,8 @@ class Containment:
             f"--env=HOME={home}",
             "--tmpfs=/tmp:exec",
         ]
+        if self.run_label:
+            argv.append(f"--label={RUN_LABEL}={self.run_label}")
         # A tmpfs for the throwaway home, so the image layer stays clean and
         # nothing a server writes outlives the trial. Skipped when HOME is
         # inside the mounted trial root, where a tmpfs would hide the one
@@ -296,6 +322,55 @@ RESOLVERS = {
     "npx.cmd": ("-y", "--yes"),
     "uvx": ("--quiet", "-q"),
 }
+
+
+def labelled(run_label: str) -> list[str]:
+    """Container ids still present under `run_label`, running or not.
+
+    Reported before removal so a leak is a number in the log rather than a
+    silent cleanup: the whole reason this exists is that something outlived its
+    episode, and a reaper that hides how often it fires would also hide the
+    defect it compensates for.
+    """
+    if not run_label or shutil.which(DOCKER) is None:
+        return []
+    probe = subprocess.run(
+        [DOCKER, "ps", "-aq", f"--filter=label={RUN_LABEL}={run_label}"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if probe.returncode != 0:
+        return []
+    return [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+
+
+def reap(run_label: str) -> list[str]:
+    """Force-remove every container under `run_label`. Returns what was there.
+
+    Safe to call when nothing leaked, which is the common case: it then costs
+    one `docker ps` and returns an empty list. Never raises, because this runs
+    in an episode's `finally` and a cleanup failure must not replace the
+    episode's own result or error.
+
+    Removal is forced rather than polite. Killing the `docker run` client does
+    not stop the container, a server that ignores SIGTERM is exactly the kind
+    that leaks, and by the time this runs the episode is over, so there is
+    nothing left to drain.
+    """
+    ids = labelled(run_label)
+    if not ids:
+        return []
+    try:
+        subprocess.run(
+            [DOCKER, "rm", "--force", "--volumes", *ids],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ids
+    return ids
 
 
 def installed_argv(command: Sequence[str]) -> list[str]:
