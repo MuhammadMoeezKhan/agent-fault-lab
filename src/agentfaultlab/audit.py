@@ -113,6 +113,14 @@ PARTIAL = "PARTIAL"
 BROKEN = "BROKEN"
 
 
+#: This checkout's root, two levels above this module
+#: (`src/agentfaultlab/audit.py`). Used for the `{repo}` substitution
+#: so a spec pointing at a first-party fixture in this repository
+#: works from any clone without an absolute path in the spec.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)
+)))
+
 @dataclass
 class ServerTarget:
     """How to build a fresh instance of one server and read its backend.
@@ -197,6 +205,11 @@ class ServerTarget:
     def _fill(text: str, root: str) -> str:
         """`{root}` is the trial's directory; `{home}` is the real home.
 
+        `{repo}` is this checkout's root, for the first-party fixtures that
+        live in it. A spec naming one of those cannot carry an absolute path,
+        because the path differs on every machine and a published spec has to
+        run from a fresh clone.
+
         A server that keeps its state in a fixed place under the home
         directory (memorix writes `~/.memorix`) can only be isolated per
         trial by moving HOME into the trial root. That makes every launch a
@@ -204,8 +217,10 @@ class ServerTarget:
         is what `{home}` is for: `npm_config_cache` can point back at the
         real cache while nothing else does.
         """
-        return text.replace("{root}", root).replace(
-            "{home}", os.path.expanduser("~")
+        return (
+            text.replace("{root}", root)
+            .replace("{home}", os.path.expanduser("~"))
+            .replace("{repo}", REPO_ROOT)
         )
 
     def resolve_prelude(self, root: str) -> list[tuple[str, dict[str, Any]]]:
