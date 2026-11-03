@@ -46,6 +46,7 @@ from .observers import (
     GitObserver,
     JsonDocObserver,
     SqliteObserver,
+    ZipDocObserver,
 )
 
 #: A fixed identity, so a commit does not fail for want of a user.name on a
@@ -122,6 +123,20 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             patterns=tuple(config.get("patterns") or ("*.json",)),
             drop_keys=tuple(config.get("drop_keys") or ()),
             name=config.get("name", "json-doc"),
+        )
+    if kind == "zip-doc":
+        # Same contract as json-doc and append-log: the archives are named by
+        # the spec, and so are the keys the audit commits to not measuring.
+        # A zip's own per-entry timestamps are never part of the comparison,
+        # because the observer reads entry contents rather than the container.
+        return lambda root: ZipDocObserver(
+            os.path.join(root, config.get("path", "")),
+            patterns=tuple(
+                config.get("patterns")
+                or ("*.xmind", "*.docx", "*.xlsx", "*.pptx")
+            ),
+            drop_keys=tuple(config.get("drop_keys") or ()),
+            name=config.get("name", "zip-doc"),
         )
     if kind == "composite":
         parts = [_observer_factory(part) for part in config.get("parts", [])]

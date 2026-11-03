@@ -1,0 +1,77 @@
+{
+  "server": {
+    "name": "community-lakeboard-converter",
+    "command": [
+      "npx",
+      "-y",
+      "lakeboard-converter",
+      "mcp"
+    ],
+    "container_command": [
+      "lakeboard-converter",
+      "mcp"
+    ],
+    "version": "lakeboard-converter (npm latest at image build time)",
+    "note": "Drawn in frame order at position 477 of Frame 3, block 5. Four tools. The writing tool declares readOnlyHint false, destructiveHint false, idempotentHint true and openWorldHint false, and takes an `overwrite` boolean that defaults to false, so whether the destination is guarded is decided per call rather than per tool. The registry command omits the `mcp` subcommand the binary needs, so the server is launched with it. The durable effect is the .xmind file the tool writes at an absolute path the caller names.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "zip-doc",
+      "path": "",
+      "patterns": [
+        "*.xmind"
+      ],
+      "drop_keys": [
+        "createdTime",
+        "modifiedTime"
+      ]
+    },
+    "note_observer": "The effect is a zip container (.xmind) holding three JSON entries, so bytes cannot be the comparison: a zip records a modification time per entry and two identical writes a second apart differ. The zip-doc observer compares the sorted entry names and each entry's projected content. The two dropped keys were found the way preregistration 6.3 requires, by diffing two identical clean runs and naming what moved: metadata.json carried createdTime and modifiedTime, differing by 281 milliseconds, and every other byte including the document body was identical. Nothing else is projected away.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block5-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "from_markdown",
+      "id": "write_xmind_overwrite_default_false",
+      "arguments": {
+        "markdown": "# Root\n## Child\n",
+        "output": "/work/out.xmind"
+      },
+      "probes": [
+        [
+          "inspect",
+          {
+            "input": "/work/out.xmind"
+          }
+        ]
+      ],
+      "note": "Writes a new file with `overwrite` left at its default. The destination is therefore guarded: a second application meets an existing file. Paired with the fixture below, which passes `overwrite: true` and changes nothing else, so the same tool is measured with and without the guard."
+    },
+    {
+      "tool": "from_markdown",
+      "id": "write_xmind_overwrite_true",
+      "arguments": {
+        "markdown": "# Root\n## Child\n",
+        "output": "/work/out.xmind",
+        "overwrite": true
+      },
+      "probes": [
+        [
+          "inspect",
+          {
+            "input": "/work/out.xmind"
+          }
+        ]
+      ],
+      "note": "The same call with the guard turned off by a caller-passed boolean. This is the per-call shape a per-tool annotation cannot express: one hint on the tool has to describe both of these."
+    }
+  ]
+}

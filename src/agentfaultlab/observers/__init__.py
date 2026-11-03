@@ -5,9 +5,11 @@ from .git import GitObserver
 from .json_doc import JsonDocObserver
 from .sqlite import SqliteObserver
 from .tally import DirectoryTallyObserver
+from .zip_doc import ZipDocObserver
 
 __all__ = [
     "Observer", "Snapshot", "CompositeObserver", "digest", "equal", "diff", "changed",
     "FilesystemObserver", "DEFAULT_IGNORE", "SqliteObserver", "GitObserver",
     "AppendLogObserver", "JsonDocObserver", "DirectoryTallyObserver",
+    "ZipDocObserver",
 ]
