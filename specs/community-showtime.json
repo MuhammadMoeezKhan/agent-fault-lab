@@ -1,0 +1,56 @@
+{
+  "server": {
+    "name": "community-showtime",
+    "command": [
+      "npx",
+      "-y",
+      "@faviovazquez/showtime-mcp"
+    ],
+    "container_command": [
+      "showtime-mcp"
+    ],
+    "version": "@faviovazquez/showtime-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 458 of Frame 3, block 5. Ten tools, annotated: every mutating tool declares readOnlyHint false, destructiveHint false, idempotentHint false and openWorldHint false, so this server is one of the minority that states a repeat is not safe. The durable effect audited here is the project folder the create tool writes. The export and render tools are not exercised: they require a browser toolchain the server downloads at call time (about 755 MB), which the containment profile has no network for.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "note_observer": "The effect is file content under the project folder, so the plain filesystem observer is canonical. HOME is moved into the trial root so nothing reaches the operator's home, and is then excluded from the snapshot: the server keeps a per-call run ledger there under timestamped and randomly suffixed directory names, which two identical clean runs would differ on, and which records that a call was attempted rather than what it did. Counting entries in that ledger would measure delivery duplication and not effect duplication, so it is deliberately not this fixture's observable.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:block5-n1"
+  },
+  "fixtures": [
+    {
+      "tool": "new_project",
+      "id": "new_project_guarded_by_empty_dir",
+      "arguments": {
+        "template": "short",
+        "dir": "{root}/proj",
+        "duration": 2
+      },
+      "probes": [
+        [
+          "status",
+          {
+            "project": "{root}/proj"
+          }
+        ]
+      ],
+      "note": "Creates a project folder from a template. The schema states the target must not exist or be empty, so this fixture exercises a create guarded by a precondition on the destination: the second application of the same call meets a non-empty directory."
+    }
+  ]
+}

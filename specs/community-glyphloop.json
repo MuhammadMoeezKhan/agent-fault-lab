@@ -1,0 +1,76 @@
+{
+  "server": {
+    "name": "community-glyphloop",
+    "command": [
+      "npx",
+      "-y",
+      "glyphloop",
+      "mcp"
+    ],
+    "container_command": [
+      "glyphloop",
+      "mcp"
+    ],
+    "version": "glyphloop (npm latest at image build time)",
+    "note": "Drawn in frame order at position 456 of Frame 3, block 5. Three tools, none carrying any annotation, so nothing is declared about reads, writes or repeats. The registry's command omits the `mcp` subcommand the binary needs, so the server is launched as `glyphloop mcp`. The durable effect is the set of files it writes into the directory passed as outDir.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "note_observer": "The effect is file content under outDir, so the plain filesystem observer is canonical. HOME is moved into the trial root to keep any npm or tool state out of the real home, and excluded from the snapshot because nothing the audited tools write goes there.",
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:block5-n1"
+  },
+  "fixtures": [
+    {
+      "tool": "render_animation",
+      "id": "render_embed_same_outdir",
+      "arguments": {
+        "preset": {
+          "source": "flowfield"
+        },
+        "outDir": "{root}/out",
+        "format": "embed"
+      },
+      "probes": [
+        [
+          "list_sources",
+          {}
+        ]
+      ],
+      "note": "Renders an animation into a caller-named directory. The three output files carry fixed names, so this fixture exercises the overwrite shape: a second application targets the same paths as the first."
+    },
+    {
+      "tool": "render_animation",
+      "id": "render_frames_same_outdir",
+      "arguments": {
+        "preset": {
+          "source": "flowfield"
+        },
+        "outDir": "{root}/frames",
+        "format": "frames"
+      },
+      "probes": [
+        [
+          "list_sources",
+          {}
+        ]
+      ],
+      "note": "The same call in the frames format, which writes per-frame output rather than one embed. Included because a per-frame writer is the shape most likely to accumulate rather than overwrite, and the duplicate rate is reportable only over fixtures where a repeat is observable at all."
+    }
+  ]
+}
