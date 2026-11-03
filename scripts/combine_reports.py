@@ -117,6 +117,13 @@ def describe(rows: list[dict[str, Any]], *, intervals: bool = True) -> dict[str,
     unconfirmable = {
         k for k, g in mutating.items() if any(row["confirmable"] is False for row in g)
     }
+    # The go/no-go gate: a fixture is a problem for a client either because a
+    # repeat lands twice, or because the client cannot find out whether it did.
+    # Derived here rather than added up by hand, because it was published once
+    # as "16 of 44" by subtracting three overlapping fixtures when only one
+    # overlapped. The union is the only safe way to count a set that two
+    # criteria can both select.
+    unsafe_or_unconfirmable = duplicating | unconfirmable
     partial = {
         k for k, g in mutating.items() if any(row["verdict"] == PARTIAL for row in g)
     }
@@ -136,6 +143,10 @@ def describe(rows: list[dict[str, Any]], *, intervals: bool = True) -> dict[str,
         "safe_by_rejection": rate(len(rejected), len(mutating)),
         "mechanism_undecidable": rate(len(undecidable), len(mutating)),
         "unconfirmable": rate(len(unconfirmable), len(mutating)),
+        "unsafe_or_unconfirmable": rate(
+            len(unsafe_or_unconfirmable), len(mutating), interval=intervals
+        ),
+        "unsafe_or_unconfirmable_overlap": len(duplicating & unconfirmable),
         "annotation_violations": violations,
         "control_failures": len(control_failures),
         "partial": rate(len(partial), len(mutating)),
@@ -229,6 +240,10 @@ def main() -> int:
         f"{pooled['mechanism_undecidable']}",
         f"- unconfirmable through the server's own read tools: "
         f"{pooled['unconfirmable']}",
+        f"- **a repeat lands twice, or the client cannot tell: "
+        f"{pooled['unsafe_or_unconfirmable']}** of mutating fixtures "
+        f"(the union of the two rows above, which overlap on "
+        f"{pooled['unsafe_or_unconfirmable_overlap']})",
         f"- partial over-application under F5, where a list argument was "
         f"tested: {pooled['partial']}",
         f"- control (F7) failures, which would invalidate the run: "
