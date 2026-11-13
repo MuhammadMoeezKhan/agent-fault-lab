@@ -693,3 +693,32 @@ def test_a_server_flag_is_not_eaten_by_the_wrapper(tmp_path):
     argv = make(tmp_path).run_argv(["solumbe", "mcp", "--json"])
     tail = argv[argv.index("afl:test") + 1 :]
     assert tail[3:] == ["solumbe", "mcp", "--json"]
+
+
+def test_a_spec_naming_its_binary_is_still_checked(monkeypatch, tmp_path):
+    """`container_command` renames the binary; it does not exempt the package.
+
+    The exemption cost a sitting on 2026-11-12: a Python distribution was
+    passed to an image build as an npm package, the install failed, and the
+    spec's explicit binary name meant the audit started the server anyway and
+    scored two fixtures from a server that was never installed.
+    """
+    import agentfaultlab.container as module
+    from agentfaultlab.audit import Audit, ServerTarget
+    from agentfaultlab.observers import FilesystemObserver
+
+    monkeypatch.setattr(
+        module,
+        "recorded_packages",
+        lambda image: (frozenset(), frozenset({"talkthrough-mcp"})),
+    )
+    target = ServerTarget(
+        name="named-binary",
+        command=["uvx", "talkthrough-mcp"],
+        container_command=["talkthrough-mcp"],
+        observer=lambda root: FilesystemObserver(root),
+        image="img",
+    )
+    with pytest.raises(ContainerError) as caught:
+        Audit(target).check_image()
+    assert "talkthrough-mcp" in str(caught.value)

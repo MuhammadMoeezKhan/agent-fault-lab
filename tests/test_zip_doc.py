@@ -149,3 +149,102 @@ def test_a_spec_can_select_the_zip_doc_observer(tmp_path):
     observer = target.observer(str(tmp_path))
     assert observer.name == "zip-doc"
     assert sorted(observer.drop_keys) == ["createdTime", "modifiedTime"]
+
+
+def test_a_declared_entry_is_dropped_whole(tmp_path):
+    """The .docx case: the moving values are in XML, not JSON.
+
+    `convert_to_docx` written twice from the same input differs in exactly two
+    values, `dcterms:created` and `dcterms:modified` in `docProps/core.xml`,
+    with `word/document.xml` byte-identical. `drop_keys` cannot reach them
+    because the entry is not JSON, so the spec names the entry instead.
+    """
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    for root, stamp in ((a, "00:26:38.606Z"), (b, "00:26:39.054Z")):
+        write_zip(
+            root / "out.docx",
+            {
+                "docProps/core.xml": f"<cp><dcterms:created>{stamp}</dcterms:created></cp>",
+                "word/document.xml": "<w:body><w:t>Title</w:t></w:body>",
+            },
+        )
+    plain = ZipDocObserver(str(a)), ZipDocObserver(str(b))
+    assert not equal(plain[0].snapshot(), plain[1].snapshot())
+    dropped = [
+        ZipDocObserver(str(root), drop_entries=("docProps/core.xml",))
+        for root in (a, b)
+    ]
+    assert equal(dropped[0].snapshot(), dropped[1].snapshot())
+
+
+def test_a_dropped_entry_still_counts_as_present(tmp_path):
+    """Only the entry's content is given up, never its name.
+
+    An archive that gained or lost the entry altogether is a changed archive,
+    so the name stays in `members` and the comparison still sees it.
+    """
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    write_zip(
+        a / "out.docx",
+        {"docProps/core.xml": "<cp/>", "word/document.xml": "<w:body/>"},
+    )
+    write_zip(b / "out.docx", {"word/document.xml": "<w:body/>"})
+    observers = [
+        ZipDocObserver(str(root), drop_entries=("docProps/core.xml",))
+        for root in (a, b)
+    ]
+    assert not equal(observers[0].snapshot(), observers[1].snapshot())
+
+
+def test_an_effect_outside_the_dropped_entry_still_shows(tmp_path):
+    """The projection must not launder away what a duplicate would show."""
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    write_zip(
+        a / "out.docx",
+        {"docProps/core.xml": "<cp>1</cp>", "word/document.xml": "<w:t>one</w:t>"},
+    )
+    write_zip(
+        b / "out.docx",
+        {"docProps/core.xml": "<cp>2</cp>", "word/document.xml": "<w:t>one two</w:t>"},
+    )
+    observers = [
+        ZipDocObserver(str(root), drop_entries=("docProps/core.xml",))
+        for root in (a, b)
+    ]
+    assert not equal(observers[0].snapshot(), observers[1].snapshot())
+
+
+def test_the_dropped_entries_are_recorded_in_the_snapshot(tmp_path):
+    """A spec cannot widen the projection without the report changing."""
+    root = tmp_path / "a"
+    root.mkdir()
+    write_zip(root / "out.docx", {"word/document.xml": "<w:body/>"})
+    state = ZipDocObserver(
+        str(root), drop_entries=("docProps/core.xml",)
+    ).snapshot()
+    entry = state["out.docx"]
+    assert entry["mode"] == "projected"
+    assert entry["dropped_entries"] == ["docProps/core.xml"]
+
+
+def test_a_dropped_entry_may_be_named_by_pattern(tmp_path):
+    """One spelling for a family of entries, since OOXML parts are a tree."""
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    write_zip(a / "out.docx", {"docProps/core.xml": "<cp>1</cp>", "x.xml": "<x/>"})
+    write_zip(b / "out.docx", {"docProps/core.xml": "<cp>2</cp>", "x.xml": "<x/>"})
+    observers = [
+        ZipDocObserver(str(root), drop_entries=("docProps/*",)) for root in (a, b)
+    ]
+    assert equal(observers[0].snapshot(), observers[1].snapshot())

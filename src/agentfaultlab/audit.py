@@ -514,10 +514,19 @@ class Audit:
         server that starts from a shim npm left behind after a failed install
         and then fails on its first call. A fixture scored from that is worse
         than a fixture not run.
+
+        The package to look up comes from `command`, which is how the registry
+        says to start the server, and not from `container_command`, which only
+        renames the binary. An earlier version skipped the check whenever a
+        spec set `container_command`, on the reasoning that a binary name is
+        not a package. That exemption cost a sitting: a candidate whose install
+        had failed nine days earlier (a Python distribution passed to the image
+        build as an npm package) started anyway, failed on every call, and
+        produced two SAFE rows that were about the image rather than the
+        server. A spec naming its own binary is the common case, so it has to
+        be the checked case too.
         """
-        if not self.target.contained or self.target.container_command:
-            # An explicit container_command names a binary rather than a
-            # package, so there is nothing to look up.
+        if not self.target.contained:
             return
         from .container import package_of, require_installed
 

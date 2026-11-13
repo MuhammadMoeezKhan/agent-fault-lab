@@ -23,6 +23,14 @@ that gained an entry changed. JSON entries are projected through the same
 wherever it appears; non-JSON entries are compared by their uncompressed
 bytes, which are stable even when the container's framing is not.
 
+Two kinds of drop are declared. `drop_keys` projects a key out of a JSON
+entry. `drop_entries` names a whole entry, which is what a `.docx` needs: two
+identical writes differ in `dcterms:created` and `dcterms:modified` inside
+`docProps/core.xml`, that entry is XML rather than JSON, and parsing OOXML to
+reach two tags would widen this observer's contract for one format. A dropped
+entry keeps its name in the comparison, so an archive that gained or lost it
+is still a changed archive, and loses only its content.
+
 The drops are declared per spec and derived the way preregistration 6.3
 requires: by diffing two identical clean runs and naming what moved, never by
 reading a key's name and guessing. The snapshot records the drop list beside
@@ -61,6 +69,7 @@ class ZipDocObserver:
         *,
         patterns: Sequence[str] = ("*.xmind", "*.docx", "*.xlsx", "*.pptx"),
         drop_keys: Iterable[str] = (),
+        drop_entries: Iterable[str] = (),
         name: str = "zip-doc",
         max_bytes: int = MAX_BYTES,
     ) -> None:
@@ -68,6 +77,7 @@ class ZipDocObserver:
         self.patterns = tuple(patterns)
         drops = tuple(drop_keys)
         self.drop_keys = drops
+        self.drop_entries = tuple(drop_entries)
         self.names = frozenset(key for key in drops if "." not in key)
         self.paths = frozenset(key for key in drops if "." in key)
         self.name = name
@@ -105,7 +115,9 @@ class ZipDocObserver:
             with zipfile.ZipFile(path) as archive:
                 members = sorted(archive.namelist())
                 entries = {
-                    member: self._member(archive, member) for member in members
+                    member: self._member(archive, member)
+                    for member in members
+                    if not self._dropped(member)
                 }
         except (OSError, zipfile.BadZipFile):
             # Not a zip after all, or truncated mid-write. Compared by bytes
@@ -121,11 +133,35 @@ class ZipDocObserver:
                 "content": hashlib.sha256(raw).hexdigest()[:16],
             }
         return {
-            "mode": "projected" if self.drop_keys else "verbatim",
+            "mode": "projected" if (self.drop_keys or self.drop_entries) else "verbatim",
             "dropped": sorted(self.drop_keys),
+            "dropped_entries": sorted(self.drop_entries),
             "members": members,
             "entries": entries,
         }
+
+    def _dropped(self, member: str) -> bool:
+        """Whether this entry is one the spec declared out of the comparison.
+
+        Declared whole-entry drops exist because `drop_keys` can only project
+        a JSON entry, and the moving values are not always in JSON. A `.docx`
+        written twice from the same input differs in exactly two values,
+        `dcterms:created` and `dcterms:modified` in `docProps/core.xml`, and
+        that entry is XML. Parsing OOXML to drop two tags would widen this
+        observer's contract for one format; naming the entry does not.
+
+        The cost is stated plainly: dropping an entry gives up every effect
+        that would only have shown up inside it. That is acceptable only when
+        two identical clean runs show the entry moving on its own and the
+        entries carrying the effect (`word/document.xml` for a `.docx`) are
+        byte-identical, which is the 6.3 procedure. The entry name is still
+        compared, because it stays in `members`: an archive that gained or
+        lost the entry altogether is still a changed archive.
+        """
+        return any(
+            member == pattern or fnmatch.fnmatch(member, pattern)
+            for pattern in self.drop_entries
+        )
 
     def _member(self, archive: zipfile.ZipFile, member: str) -> str:
         if member.endswith("/"):

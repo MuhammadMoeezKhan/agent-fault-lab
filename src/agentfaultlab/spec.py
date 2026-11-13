@@ -136,6 +136,7 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
                 or ("*.xmind", "*.docx", "*.xlsx", "*.pptx")
             ),
             drop_keys=tuple(config.get("drop_keys") or ()),
+            drop_entries=tuple(config.get("drop_entries") or ()),
             name=config.get("name", "zip-doc"),
         )
     if kind == "composite":
