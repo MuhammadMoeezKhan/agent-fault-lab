@@ -1,0 +1,135 @@
+{
+  "server": {
+    "name": "community-j0hanz-filesystem",
+    "command": [
+      "npx",
+      "-y",
+      "@j0hanz/filesystem-mcp",
+      "{root}"
+    ],
+    "container_command": [
+      "filesystem-mcp",
+      "/work"
+    ],
+    "version": "@j0hanz/filesystem-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 539 of Frame 3, block 5. Fourteen tools, seven mutating by the declared test. The allowed directory is passed as an argument: called without one the server answers ACCESS_DENIED and points at list_roots, so the spec names the trial root explicitly. read and stat take paths, so each fixture declares a probe.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "notes.txt": "alpha\nbeta\ngamma\n"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block5-n5"
+  },
+  "fixtures": [
+    {
+      "tool": "create",
+      "id": "create_one_new_file",
+      "arguments": {
+        "files": [
+          {
+            "path": "{root}/new.txt",
+            "content": "one\n"
+          }
+        ]
+      },
+      "probes": [
+        [
+          "read",
+          {
+            "path": "{root}/new.txt"
+          }
+        ]
+      ],
+      "note": "A write to a path that does not exist, with neither append nor overwrite passed. The schema says an existing file prompts for confirmation without overwrite, so the second application meets a guard the caller did not ask for."
+    },
+    {
+      "tool": "create",
+      "id": "create_appending_to_a_file",
+      "arguments": {
+        "files": [
+          {
+            "path": "{root}/notes.txt",
+            "content": "delta\n",
+            "append": true
+          }
+        ]
+      },
+      "probes": [
+        [
+          "read",
+          {
+            "path": "{root}/notes.txt"
+          }
+        ]
+      ],
+      "note": "The same tool with append passed, which is the shape where one application is distinguishable from two: appended content accumulates, so a repeat is visible in the file rather than hidden by an overwrite. Same tool, same annotations, opposite observability, decided by one boolean in the call."
+    },
+    {
+      "tool": "create",
+      "id": "create_two_files_in_one_call",
+      "arguments": {
+        "files": [
+          {
+            "path": "{root}/a.txt",
+            "content": "a\n"
+          },
+          {
+            "path": "{root}/b.txt",
+            "content": "b\n"
+          }
+        ]
+      },
+      "probes": [
+        [
+          "read",
+          {
+            "paths": [
+              "{root}/a.txt",
+              "{root}/b.txt"
+            ]
+          }
+        ]
+      ],
+      "note": "The list-argument case F5 exists for: a truncated batch can leave a prefix applied, and the retry then applies the whole list."
+    },
+    {
+      "tool": "edit",
+      "id": "edit_replacing_exact_text",
+      "arguments": {
+        "path": "{root}/notes.txt",
+        "edits": [
+          {
+            "oldText": "beta",
+            "newText": "BETA"
+          }
+        ]
+      },
+      "probes": [
+        [
+          "read",
+          {
+            "path": "{root}/notes.txt"
+          }
+        ]
+      ],
+      "note": "A replacement keyed to exact text that must match once. The retry's oldText is no longer present, so this is the compare-and-swap shape the taxonomy distinguishes from a refusal by precondition supplied by the caller."
+    }
+  ]
+}

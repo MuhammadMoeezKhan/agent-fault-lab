@@ -1,0 +1,51 @@
+{
+  "server": {
+    "name": "community-brianbooms",
+    "command": [
+      "npx",
+      "-y",
+      "brianbooms-mcp"
+    ],
+    "container_command": [
+      "brianbooms-mcp"
+    ],
+    "version": "brianbooms-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 509 of Frame 3, block 5. Five tools, none annotated, describing a storefront and an x402 payment flow. Nothing is purchased, and the payment path needs the network the containment profile removes, so only the two tools that need neither are exercised.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "catalog",
+      "id": "catalog_listing",
+      "arguments": {},
+      "note": "The entry point. Measured for a durable effect because the tool carries no annotation, so mutating is assumed until the state says otherwise."
+    },
+    {
+      "tool": "purchase_instructions",
+      "id": "purchase_instructions_for_a_product",
+      "arguments": {
+        "product_id": "ambient-1"
+      },
+      "note": "The closest thing to a write this server exposes without a payment. Called to find out whether asking for payment requirements records anything."
+    }
+  ]
+}

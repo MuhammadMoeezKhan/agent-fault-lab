@@ -1,0 +1,61 @@
+{
+  "server": {
+    "name": "community-dsfinv-k-export-lint",
+    "command": [
+      "npx",
+      "-y",
+      "@readystack/dsfinv-k-export-lint",
+      "--mcp"
+    ],
+    "container_command": [
+      "dsfinv-k-export-lint",
+      "--mcp"
+    ],
+    "version": "@readystack/dsfinv-k-export-lint (npm latest at image build time)",
+    "note": "Drawn in frame order at position 506 of Frame 3, block 5. Three tools, none annotated. check_file and check_text are free; check_dir requires a licence this study does not buy, so its rows record the refusal rather than a sweep.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "exports"
+      ],
+      "files": {
+        "exports/einzelaufzeichnungen.csv": "Z_KASSE_ID;Z_ERSTELLUNG;Z_NR;BON_ID\n1;2026-01-01;1;1\n",
+        "exports/stamm_abschluss.csv": "Z_KASSE_ID;Z_ERSTELLUNG;Z_NR\n1;2026-01-01;1\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "check_file",
+      "id": "check_one_file",
+      "arguments": {
+        "path": "{root}/exports/einzelaufzeichnungen.csv"
+      },
+      "note": "The free single-file check, against a seeded DSFinV-K style export. Measured to find out whether a linter leaves anything behind."
+    },
+    {
+      "tool": "check_dir",
+      "id": "check_the_folder",
+      "arguments": {
+        "dir": "{root}/exports",
+        "ext": "csv"
+      },
+      "note": "The licensed sweep, called without a licence. What the server does at that boundary is the measurement; nothing is purchased."
+    }
+  ]
+}

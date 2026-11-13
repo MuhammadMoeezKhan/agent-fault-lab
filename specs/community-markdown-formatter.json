@@ -1,0 +1,97 @@
+{
+  "server": {
+    "name": "community-markdown-formatter",
+    "command": [
+      "npx",
+      "-y",
+      "@xjtlumedia/markdown-mcp-server"
+    ],
+    "container_command": [
+      "markdown-mcp-server"
+    ],
+    "version": "@xjtlumedia/markdown-mcp-server (npm latest at image build time)",
+    "note": "Drawn in frame order at position 486 of Frame 3, block 5. Thirty four tools. Each conversion takes the document as a string plus an output_path, so the durable effect is a file at a path the caller names, and the read tools take markdown as a string rather than a path, so the fixtures declare no probes. The PDF and image tools are not exercised: they render through a headless Chromium the containment profile has no network to fetch.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "*.docx",
+            "*.xlsx"
+          ]
+        },
+        {
+          "kind": "zip-doc",
+          "path": "",
+          "patterns": [
+            "*.docx",
+            "*.xlsx"
+          ],
+          "drop_entries": [
+            "docProps/core.xml"
+          ]
+        }
+      ]
+    },
+    "note_observer": "Two observers, because this server writes two kinds of effect into one trial root. Plain text outputs (md, txt, csv, html) are file content and the filesystem observer is canonical for them. A .docx is a zip container, so bytes cannot be the comparison: a zip stores a modification time per entry and two identical writes a second apart differ, which is what amendment 9.7 was written for. The zip paths are therefore excluded from the filesystem part and compared by entry names and projected entry contents instead. One entry is dropped whole, docProps/core.xml, derived the way preregistration 6.3 requires: two identical clean runs were unzipped and compared entry by entry, the entry names were identical, and exactly two values moved, dcterms:created and dcterms:modified, 448 milliseconds apart, with word/document.xml and every other entry byte identical. Nothing else is projected away, and the entry's own presence is still compared.",
+    "setup": {
+      "directories": [
+        "home",
+        "batch"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:block5-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "harmonize_markdown",
+      "id": "harmonize_to_new_text_file",
+      "arguments": {
+        "markdown": "#Title\n* one\n* two\n",
+        "output_path": "{root}/out.md"
+      },
+      "note": "The plain text case: a write to a caller-named path that does not exist yet. No probes are declared because this server's read tools take markdown as a string rather than a path."
+    },
+    {
+      "tool": "convert_to_docx",
+      "id": "convert_docx_to_new_file",
+      "arguments": {
+        "markdown": "# Title\n\nBody text.\n\n- one\n- two\n",
+        "output_path": "{root}/out.docx"
+      },
+      "note": "The binary case, and the reason this spec needs the zip-doc observer: a .docx is a zip of XML parts. Same declared annotations as the text tools."
+    },
+    {
+      "tool": "batch_convert",
+      "id": "batch_two_items_one_format",
+      "arguments": {
+        "items": [
+          {
+            "title": "first",
+            "markdown": "# First\n\nAlpha.\n"
+          },
+          {
+            "title": "second",
+            "markdown": "# Second\n\nBeta.\n"
+          }
+        ],
+        "formats": [
+          "txt"
+        ],
+        "output_dir": "{root}/batch",
+        "markdown": "# First\n\nAlpha.\n"
+      },
+      "note": "The list-argument case, which is what F5 exists for: a truncated batch can leave a prefix applied, and a retry of the whole call then re-applies the part that already landed. The call carries a top level markdown argument alongside items and formats, which is what this build requires to run the batch at all."
+    }
+  ]
+}
