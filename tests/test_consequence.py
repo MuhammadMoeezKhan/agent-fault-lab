@@ -825,3 +825,54 @@ def test_an_admission_of_not_looking_is_a_hedge_however_it_is_spelled(message):
     it cannot create a false success.
     """
     assert parse_claim(message) == CLAIM_UNCONFIRMED
+
+
+# --------------------------- a positive completion test (2026-11-14)
+
+def test_a_client_transport_error_is_not_a_completed_episode():
+    """An API error sets no error field, so the old test called it completed.
+
+    Three episodes in the hosted main run failed this way. They were recorded
+    as completed with an end state of "nothing landed", which is the shape of a
+    result, and they sat in the clean condition's denominator.
+    """
+    from agentfaultlab.consequence import _runner_failure
+
+    failure = _runner_failure(
+        "API Error: Can't reach the API server, check your internet or DNS "
+        "(ENOTFOUND)"
+    )
+    assert failure is not None
+    assert "ENOTFOUND" in failure
+
+
+def test_an_empty_final_message_is_not_a_completed_episode():
+    """No claim means no evidence about claims, whatever the backend holds."""
+    from agentfaultlab.consequence import _runner_failure
+
+    assert _runner_failure("") == "no final message"
+    assert _runner_failure("   \n ") == "no final message"
+
+
+def test_an_answer_the_parser_cannot_categorise_is_still_an_episode():
+    """The completion test is narrow on purpose.
+
+    Hand adjudication of the hosted arm found that the parser's "no claim"
+    verdict is usually the parser's mistake, not the agent's silence. Treating
+    it as an error would discard real episodes, so only an empty message and a
+    client transport error count.
+    """
+    from agentfaultlab.consequence import _runner_failure
+
+    assert _runner_failure("I'm wrapping up. INV-0 now has an amount of 250.") is None
+    assert _runner_failure("The insert call timed out, so I read the table back.") is None
+
+
+def test_a_transport_error_quoted_inside_an_answer_is_still_an_episode():
+    """The marker anchors at the start, so an agent describing an error is safe."""
+    from agentfaultlab.consequence import _runner_failure
+
+    assert _runner_failure(
+        "The charge is recorded. One read came back with API Error: timeout, "
+        "so I ran it again and it answered."
+    ) is None

@@ -1303,8 +1303,10 @@ class ConsequenceRunner:
                 task.instruction + PROMPT_ARMS[arm], root
             )
             outcome = agent.run(instruction, config_path, root)
-            result.error = outcome.get("error")
             result.final_message = outcome.get("text") or ""
+            result.error = outcome.get("error") or _runner_failure(
+                result.final_message
+            )
             result.turns = outcome.get("turns")
             # A held call (F3) can still be in flight when the agent stops.
             time.sleep(self.settle_s)
@@ -1427,6 +1429,42 @@ def _substitute(value: Any, root: str) -> Any:
     if isinstance(value, list):
         return [_substitute(item, root) for item in value]
     return value
+
+
+#: Final messages that are the client reporting it never ran rather than an
+#: answer to the task. A failure like this sets no error field of its own, so a
+#: count of errored episodes that reads only that field records it as a
+#: completed episode whose effect did not land, which is the shape of a result.
+CLIENT_FAILURE_PREFIXES = (
+    "API Error:",
+    "Execution error:",
+    "Credit balance is too low",
+)
+
+
+def _runner_failure(text: str) -> Optional[str]:
+    """An error the client reported in place of an answer, or None.
+
+    The completion test is positive: an episode is evidence about claims only
+    if it carries a claim. Two kinds of episode carry none, and both were
+    counted as completed by an earlier version of this runner, which tested
+    only the error field the agent harness sets. Three of them reached a
+    reported table, in the clean condition, where they cost the comparison
+    three apparent misses and inflated its denominator.
+
+    This is deliberately narrow. An empty message and the client's own
+    transport error are the two cases where nothing was claimed at all. A
+    message the claim parser cannot categorise is **not** treated as an error,
+    because hand adjudication showed that category is mostly the parser's
+    mistake rather than the agent's silence.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return "no final message"
+    for prefix in CLIENT_FAILURE_PREFIXES:
+        if stripped.startswith(prefix):
+            return f"client reported no answer: {stripped[:120]}"
+    return None
 
 
 def _substitute_text(text: str, root: str) -> str:
