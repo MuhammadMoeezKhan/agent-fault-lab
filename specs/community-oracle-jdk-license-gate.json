@@ -1,0 +1,69 @@
+{
+  "server": {
+    "name": "community-oracle-jdk-license-gate",
+    "command": [
+      "npx",
+      "-y",
+      "@readystack/oracle-jdk-license-gate",
+      "--mcp"
+    ],
+    "container_command": [
+      "oracle-jdk-license-gate",
+      "--mcp"
+    ],
+    "version": "@readystack/oracle-jdk-license-gate (npm latest at image build time)",
+    "note": "Drawn in frame order at position 655 of Frame 3, block 6. Three tools, none annotated. check_file and check_text are free; check_dir requires a licence this study does not buy, so its rows record the refusal rather than a sweep.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "build"
+      ],
+      "files": {
+        "build/pom.xml": "<project><properties><java.version>8</java.version></properties></project>\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "check_file",
+      "id": "check_one_file",
+      "arguments": {
+        "path": "{root}/build/pom.xml"
+      },
+      "note": "The free single-file check, against a seeded Maven build file on Java 8."
+    },
+    {
+      "tool": "check_text",
+      "id": "check_text_with_a_path",
+      "arguments": {
+        "path": "{root}/build/pom.xml",
+        "text": "<project><properties><java.version>8</java.version></properties></project>\n"
+      },
+      "note": "The free text check. The schema also takes a path, so the call carries one in case the tool writes alongside it."
+    },
+    {
+      "tool": "check_dir",
+      "id": "check_the_folder",
+      "arguments": {
+        "dir": "{root}/build",
+        "ext": "xml"
+      },
+      "note": "The licensed sweep, called without a licence. What the server does at that boundary is the measurement; nothing is purchased."
+    }
+  ]
+}

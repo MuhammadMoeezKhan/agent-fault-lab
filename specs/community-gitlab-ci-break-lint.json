@@ -1,0 +1,69 @@
+{
+  "server": {
+    "name": "community-gitlab-ci-break-lint",
+    "command": [
+      "npx",
+      "-y",
+      "@readystack/gitlab-ci-break-lint",
+      "--mcp"
+    ],
+    "container_command": [
+      "gitlab-ci-break-lint",
+      "--mcp"
+    ],
+    "version": "@readystack/gitlab-ci-break-lint (npm latest at image build time)",
+    "note": "Drawn in frame order at position 664 of Frame 3, block 6. Three tools, none annotated. check_file and check_text are free; check_dir requires a licence this study does not buy, so its rows record the refusal rather than a sweep.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "ci"
+      ],
+      "files": {
+        "ci/.gitlab-ci.yml": "build:\n  image: node:14\n  only:\n    - main\n  script:\n    - npm test\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "check_file",
+      "id": "check_one_file",
+      "arguments": {
+        "path": "{root}/ci/.gitlab-ci.yml"
+      },
+      "note": "The free single-file check, against a seeded GitLab CI file."
+    },
+    {
+      "tool": "check_text",
+      "id": "check_text_with_a_path",
+      "arguments": {
+        "path": "{root}/ci/.gitlab-ci.yml",
+        "text": "build:\n  image: node:14\n  only:\n    - main\n  script:\n    - npm test\n"
+      },
+      "note": "The free text check. The schema also takes a path, so the call carries one in case the tool writes alongside it."
+    },
+    {
+      "tool": "check_dir",
+      "id": "check_the_folder",
+      "arguments": {
+        "dir": "{root}/ci",
+        "ext": "yml"
+      },
+      "note": "The licensed sweep, called without a licence. What the server does at that boundary is the measurement; nothing is purchased."
+    }
+  ]
+}

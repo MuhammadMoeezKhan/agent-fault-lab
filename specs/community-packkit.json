@@ -1,0 +1,61 @@
+{
+  "server": {
+    "name": "community-packkit",
+    "command": [
+      "npx",
+      "-y",
+      "packkit-mcp"
+    ],
+    "container_command": [
+      "packkit-mcp"
+    ],
+    "version": "packkit-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 657 of Frame 3, block 6. Six tools, none annotated. generate_project previews by default and writes <directory>/<name> with write true; existing files are kept unless force is passed. HOME is not observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "out"
+      ]
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block6-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "generate_project",
+      "id": "generate_write",
+      "arguments": {
+        "generator": "javascript",
+        "name": "demo",
+        "directory": "{root}/out",
+        "write": true
+      },
+      "note": "Scaffolds a JavaScript project with the defaults."
+    },
+    {
+      "tool": "generate_project",
+      "id": "generate_write_force",
+      "arguments": {
+        "generator": "javascript",
+        "name": "demo",
+        "directory": "{root}/out",
+        "write": true,
+        "force": true
+      },
+      "note": "The same with force, which overwrites existing files."
+    }
+  ]
+}

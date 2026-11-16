@@ -1,0 +1,97 @@
+{
+  "server": {
+    "name": "community-weavatrix-refactor-js",
+    "command": [
+      "npx",
+      "-y",
+      "weavatrix-refactor-js"
+    ],
+    "container_command": [
+      "weavatrix-refactor-js-mcp"
+    ],
+    "version": "weavatrix-refactor-js 0.3.15 (npm latest at image build time)",
+    "note": "Drawn in frame order at position 59 of Frame 3; re-entered under amendment 9.8 (its declared binary is weavatrix-refactor-js-mcp). Forty five tools, none annotated. Source edits are enabled by the documented WEAVATRIX_ALLOW_SOURCE_EDITS=1. A server prelude opens a seeded one-file git repository; open_repo is not under test. Its graph cache lives under HOME and is not observed; the repository is observed with .git excluded.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1",
+      "WEAVATRIX_ALLOW_SOURCE_EDITS": "1"
+    },
+    "prelude": [
+      [
+        "open_repo",
+        {
+          "path": "{root}/repo"
+        }
+      ]
+    ],
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store",
+        "repo/.git",
+        "repo/.git/*"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "git": {
+        "path": "repo"
+      },
+      "files": {
+        "repo/app.js": "export function alpha() {\n  return 1;\n}\n\nexport function beta() {\n  return 2;\n}\n",
+        "repo/package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\",\"type\":\"module\"}\n"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:reprobe-bin-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "edit_symbol",
+      "id": "insert_after_symbol",
+      "arguments": {
+        "symbol": "app.js#alpha@1",
+        "operation": "insert_after_symbol",
+        "content": "\nexport function gamma() {\n  return 3;\n}\n"
+      },
+      "probes": [
+        [
+          "read_source",
+          {
+            "path": "app.js",
+            "start_line": 1,
+            "before": 0,
+            "after": 40
+          }
+        ]
+      ],
+      "note": "Inserts a new function after alpha. The symbol is passed by its graph node id, since the bare name is not resolved."
+    },
+    {
+      "tool": "edit_symbol",
+      "id": "replace_symbol_body",
+      "arguments": {
+        "symbol": "app.js#beta@5",
+        "operation": "replace_symbol_body",
+        "content": "export function beta() {\n  return 22;\n}"
+      },
+      "probes": [
+        [
+          "read_source",
+          {
+            "path": "app.js",
+            "start_line": 1,
+            "before": 0,
+            "after": 40
+          }
+        ]
+      ],
+      "note": "Replaces beta's definition."
+    }
+  ]
+}

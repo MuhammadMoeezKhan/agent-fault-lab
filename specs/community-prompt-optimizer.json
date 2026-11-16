@@ -1,0 +1,83 @@
+{
+  "server": {
+    "name": "community-prompt-optimizer",
+    "command": [
+      "npx",
+      "-y",
+      "claude-prompt-optimizer-mcp"
+    ],
+    "container_command": [
+      "claude-prompt-optimizer-mcp"
+    ],
+    "version": "claude-prompt-optimizer-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 637 of Frame 3, block 6. Twenty tools, none annotated. State lives under HOME/.prompt-control-plane: one file per session under sessions/ named by a generated id, plus usage.json (the free tier's metered count) and stats.json. Sessions are observed as a tally with id, created_at and last_accessed declared away; usage.json and stats.json as JSON documents with their time stamps declared away, counts kept.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store"
+          ]
+        },
+        {
+          "kind": "tally",
+          "path": "home/.prompt-control-plane/sessions",
+          "name": "sessions",
+          "patterns": [
+            "*.json"
+          ],
+          "drop_keys": [
+            "id",
+            "created_at",
+            "last_accessed"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": "home/.prompt-control-plane",
+          "name": "meters",
+          "patterns": [
+            "usage.json",
+            "stats.json"
+          ],
+          "drop_keys": [
+            "first_used_at",
+            "last_used_at",
+            "current_period_start"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "optimize_prompt",
+      "id": "optimize_one_prompt",
+      "arguments": {
+        "raw_prompt": "Write a function that sums a list of numbers."
+      },
+      "probes": [
+        [
+          "get_usage",
+          {}
+        ]
+      ],
+      "note": "Compiles one prompt, which opens a session and counts against the free tier. get_usage reads the meter back."
+    }
+  ]
+}

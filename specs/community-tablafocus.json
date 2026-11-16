@@ -1,0 +1,60 @@
+{
+  "server": {
+    "name": "community-tablafocus",
+    "command": [
+      "npx",
+      "-y",
+      "tablafocus-mcp"
+    ],
+    "container_command": [
+      "tablafocus-mcp"
+    ],
+    "version": "tablafocus-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 721 of Frame 3, block 6. Thirteen tools, none annotated. practice_coach takes a profile id and promises adaptive updates, so it is the candidate for durable state. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n7"
+  },
+  "fixtures": [
+    {
+      "tool": "practice_coach",
+      "id": "practice_plan",
+      "arguments": {
+        "profile_id": "audit-student",
+        "availability": {
+          "minutes_per_day": 30,
+          "days_per_week": 5
+        },
+        "goals": [
+          "teentaal fluency"
+        ]
+      },
+      "note": "Creates a weekly plan for a named profile."
+    },
+    {
+      "tool": "compose_builder",
+      "id": "compose_tihai",
+      "arguments": {
+        "form": "tihai",
+        "taal": "teentaal",
+        "jati": "chatusra"
+      },
+      "note": "Builds one composition."
+    }
+  ]
+}

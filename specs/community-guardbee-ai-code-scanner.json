@@ -1,0 +1,54 @@
+{
+  "server": {
+    "name": "community-guardbee-ai-code-scanner",
+    "command": [
+      "npx",
+      "-y",
+      "@guardbee/mcp-ai-code-scanner"
+    ],
+    "container_command": [
+      "guardbee-ai-code-scanner"
+    ],
+    "version": "@guardbee/mcp-ai-code-scanner (npm latest at image build time)",
+    "note": "Drawn in frame order at position 692 of Frame 3; re-entered under amendment 9.8 (its declared binary is guardbee-ai-code-scanner). Four tools, none annotated; three scan text, a file or a directory. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "src/server.js": "const key = 'sk-test-0000';\nconsole.log('tool call', process.argv);\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:reprobe-bin-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "scan_file",
+      "id": "scan_one_file",
+      "arguments": {
+        "path": "{root}/src/server.js"
+      },
+      "note": "Scans a seeded file."
+    },
+    {
+      "tool": "scan_directory",
+      "id": "scan_a_directory",
+      "arguments": {
+        "path": "{root}/src"
+      },
+      "note": "Scans a seeded directory."
+    }
+  ]
+}

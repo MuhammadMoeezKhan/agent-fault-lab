@@ -1,0 +1,49 @@
+{
+  "server": {
+    "name": "community-wheelofheaven",
+    "command": [
+      "npx",
+      "-y",
+      "@wheelofheaven/mcp"
+    ],
+    "container_command": [
+      "wheelofheaven-mcp"
+    ],
+    "version": "@wheelofheaven/mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 589 of Frame 3; re-entered under amendment 9.8 (its declared binary is wheelofheaven-mcp). Nine tools, none annotated; the registry describes the corpus as read only. Two lookups are exercised. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:reprobe-bin-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "search_corpus",
+      "id": "search_corpus",
+      "arguments": {
+        "query": "flood"
+      },
+      "note": "A full-text search."
+    },
+    {
+      "tool": "get_source",
+      "id": "get_source",
+      "arguments": {},
+      "note": "A bibliography lookup."
+    }
+  ]
+}

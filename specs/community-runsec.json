@@ -1,0 +1,59 @@
+{
+  "server": {
+    "name": "community-runsec",
+    "command": [
+      "npx",
+      "-y",
+      "@runsec/mcp"
+    ],
+    "container_command": [
+      "runsec-mcp"
+    ],
+    "version": "@runsec/mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 531 of Frame 3; re-entered under amendment 9.8 (its declared binary is runsec-mcp). Nineteen tools, none annotated. Fixtures pass a seeded workspace with one Python file.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "ws/app.py": "import sqlite3\n\ndef find(conn, name):\n    return conn.execute(\"select * from t where n = '\" + name + \"'\")\n"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:reprobe-bin-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "runsec_ignore_finding",
+      "id": "ignore_one_finding",
+      "arguments": {
+        "workspace_path": "{root}/ws",
+        "rule_id": "PY-001",
+        "file_path": "app.py",
+        "line_content": "    return conn.execute(\"select * from t where n = '\" + name + \"'\")"
+      },
+      "note": "Persists one accepted false positive to .runsecignore.yaml."
+    },
+    {
+      "tool": "runsec_audit_general",
+      "id": "general_audit",
+      "arguments": {
+        "workspace_path": "{root}/ws"
+      },
+      "note": "Runs the general audit, which writes runsec-report.md."
+    }
+  ]
+}

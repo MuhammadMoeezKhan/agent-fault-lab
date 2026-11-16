@@ -1,0 +1,60 @@
+{
+  "server": {
+    "name": "community-codecanvas",
+    "command": [
+      "npx",
+      "-y",
+      "codecanvas-mcp"
+    ],
+    "container_command": [
+      "codecanvas-mcp"
+    ],
+    "version": "codecanvas-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 641 of Frame 3, block 6. Thirteen tools, none annotated; all analyse a Python project. The analysis writes a call-graph cache to <project>/.codecanvas/callgraph.json, keyed by the source files' modification times; two clean runs differed only in that key. The cache is bookkeeping, as with other servers' indexes, and is not observed; the rest of the project is.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store",
+        "proj/.codecanvas",
+        "proj/.codecanvas/*"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "proj/app.py": "def total(xs):\n    return sum(xs)\n\n\ndef main():\n    print(total([1, 2]))\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "find_symbols",
+      "id": "find_symbols",
+      "arguments": {
+        "query": "total",
+        "project_path": "{root}/proj"
+      },
+      "note": "Finds a symbol."
+    },
+    {
+      "tool": "what_does",
+      "id": "what_does",
+      "arguments": {
+        "function": "total",
+        "project_path": "{root}/proj"
+      },
+      "note": "Summarises a function."
+    }
+  ]
+}

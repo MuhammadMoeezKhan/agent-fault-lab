@@ -1,0 +1,53 @@
+{
+  "server": {
+    "name": "community-blueprint-chart",
+    "command": [
+      "npx",
+      "-y",
+      "@blueprint-chart/mcp"
+    ],
+    "container_command": [
+      "blueprint-chart-mcp"
+    ],
+    "version": "@blueprint-chart/mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 711 of Frame 3; re-entered under amendment 9.8 (its declared binary is blueprint-chart-mcp). Eleven tools; render is the one not declared read only (it declares idempotentHint true). HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:reprobe-bin-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "render",
+      "id": "render_svg",
+      "arguments": {
+        "source": "{src}",
+        "format": "svg"
+      },
+      "prelude": [
+        [
+          "get_example",
+          {},
+          {
+            "src": "dsl"
+          }
+        ]
+      ],
+      "note": "Renders the server's own canonical example to SVG; the example's DSL is captured from the fixture prelude, which calls a different tool."
+    }
+  ]
+}

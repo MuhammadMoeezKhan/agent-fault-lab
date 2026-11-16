@@ -1,0 +1,53 @@
+{
+  "server": {
+    "name": "community-astronomy-oracle",
+    "command": [
+      "npx",
+      "-y",
+      "astronomy-oracle"
+    ],
+    "container_command": [
+      "astronomy-oracle"
+    ],
+    "version": "astronomy-oracle (npm latest at image build time)",
+    "note": "Drawn in frame order at position 640 of Frame 3, block 6. Three tools, none annotated, over a bundled catalogue. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "plan_session",
+      "id": "plan_session",
+      "arguments": {
+        "date": "2026-12-01",
+        "latitude": 32.8,
+        "longitude": -96.8
+      },
+      "note": "Plans one observing session."
+    },
+    {
+      "tool": "lookup_object",
+      "id": "lookup_m31",
+      "arguments": {
+        "name": "M31"
+      },
+      "note": "Looks up one object."
+    }
+  ]
+}

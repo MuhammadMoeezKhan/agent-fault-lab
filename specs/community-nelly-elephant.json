@@ -1,0 +1,51 @@
+{
+  "server": {
+    "name": "community-nelly-elephant",
+    "command": [
+      "npx",
+      "-y",
+      "nelly-elephant-mcp"
+    ],
+    "container_command": [
+      "nelly-elephant-mcp"
+    ],
+    "version": "nelly-elephant-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 714 of Frame 3, block 6. Four tools, none annotated, searching assistant transcripts under HOME, which is empty in the trial. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n6"
+  },
+  "fixtures": [
+    {
+      "tool": "nelly_search",
+      "id": "search_sessions",
+      "arguments": {
+        "query": "retry"
+      },
+      "note": "Searches for a term."
+    },
+    {
+      "tool": "nelly_recent",
+      "id": "recent_sessions",
+      "arguments": {
+        "count": 3
+      },
+      "note": "Lists recent sessions."
+    }
+  ]
+}

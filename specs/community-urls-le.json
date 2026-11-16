@@ -1,0 +1,44 @@
+{
+  "server": {
+    "name": "community-urls-le",
+    "command": [
+      "npx",
+      "-y",
+      "urls-le-mcp"
+    ],
+    "container_command": [
+      "urls-le-mcp"
+    ],
+    "version": "urls-le-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 656 of Frame 3, block 6. One tool, not annotated. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "extract_urls",
+      "id": "extract_urls",
+      "arguments": {
+        "content": "See https://example.com/a and http://example.org/b.\n",
+        "filename": "notes.md"
+      },
+      "note": "Extracts URLs from seeded text."
+    }
+  ]
+}

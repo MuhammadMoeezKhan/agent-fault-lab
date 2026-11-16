@@ -1,0 +1,71 @@
+{
+  "server": {
+    "name": "community-mcp-security-guard",
+    "command": [
+      "npx",
+      "-y",
+      "mcp-security-guard"
+    ],
+    "container_command": [
+      "mcp-security-guard"
+    ],
+    "version": "mcp-security-guard (npm latest at image build time)",
+    "note": "Drawn in frame order at position 659 of Frame 3, block 6. Seventeen tools. pin_context hashes skills, rules and CLAUDE.md files and records them in HOME/.claude/mcp-security/context-pins.json; HOME is the trial's. Tools that launch other servers or need the network are not exercised. The pins file is observed with its time stamps declared away.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home/.claude/mcp-security",
+            "home/.claude/mcp-security/*",
+            ".DS_Store"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": "home/.claude/mcp-security",
+          "name": "pins",
+          "patterns": [
+            "*.json"
+          ],
+          "drop_keys": [
+            "pinnedAt",
+            "pinned_at",
+            "updatedAt",
+            "updated_at",
+            "createdAt",
+            "created_at",
+            "timestamp"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "proj/CLAUDE.md": "# Rules\n\nRun tests.\n",
+        "home/.claude/CLAUDE.md": "# User rules\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "pin_context",
+      "id": "pin_context",
+      "arguments": {
+        "project_dir": "{root}/proj"
+      },
+      "note": "Pins hashes of the seeded instruction files."
+    }
+  ]
+}

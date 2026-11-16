@@ -1,0 +1,66 @@
+{
+  "server": {
+    "name": "community-layoza",
+    "command": [
+      "npx",
+      "-y",
+      "layoza",
+      "mcp"
+    ],
+    "container_command": [
+      "layoza",
+      "mcp"
+    ],
+    "version": "layoza (npm latest at image build time)",
+    "note": "Drawn in frame order at position 702 of Frame 3, block 6. Sixteen tools, none annotated. Writers take write_approved true. A seeded static site is the project. Screenshot and live-URL tools are not exercised.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "site/index.html": "<!doctype html><html><head><title>Demo</title><style>:root{--brand:#e94560}body{font-family:sans-serif}</style></head><body><header><h1>Demo</h1></header><main><p>Hello.</p></main></body></html>\n",
+        "site/package.json": "{\"name\":\"site\",\"version\":\"1.0.0\"}\n"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block6-n6"
+  },
+  "fixtures": [
+    {
+      "tool": "extract_site_dna",
+      "id": "extract_site_dna",
+      "arguments": {
+        "path": "{root}/site",
+        "write_approved": true
+      },
+      "note": "Extracts Site DNA and writes its documents into the project."
+    },
+    {
+      "tool": "safe_rollback",
+      "id": "create_baseline",
+      "arguments": {
+        "action": "create",
+        "path": "{root}/site",
+        "files": [
+          "{root}/site/index.html"
+        ],
+        "write_approved": true,
+        "baseline_id": "b1"
+      },
+      "note": "Creates a reversible baseline snapshot of one file under a caller-named baseline id."
+    }
+  ]
+}

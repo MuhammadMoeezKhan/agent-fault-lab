@@ -1,0 +1,55 @@
+{
+  "server": {
+    "name": "community-buzzr",
+    "command": [
+      "npx",
+      "-y",
+      "@buzzr/mcp"
+    ],
+    "container_command": [
+      "mcp"
+    ],
+    "version": "@buzzr/mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 628 of Frame 3, block 6. Eleven tools, none annotated, none taking a path; all compute over their arguments. Two are exercised. HOME is observed, since there is no path argument.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "kelly_stake",
+      "id": "kelly_stake",
+      "arguments": {
+        "americanOdds": -110,
+        "bankroll": 1000,
+        "winProbability": 0.55,
+        "fraction": 0.5
+      },
+      "note": "A stake-sizing computation."
+    },
+    {
+      "tool": "closing_line_value",
+      "id": "closing_line_value",
+      "arguments": {
+        "placedAmericanOdds": -110,
+        "closingAmericanOdds": -120
+      },
+      "note": "A closing-line comparison; measured for whether anything is recorded."
+    }
+  ]
+}

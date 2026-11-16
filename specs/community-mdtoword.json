@@ -1,0 +1,64 @@
+{
+  "server": {
+    "name": "community-mdtoword",
+    "command": [
+      "npx",
+      "-y",
+      "aigroup-mdtoword-mcp"
+    ],
+    "container_command": [
+      "aigroup-mdtoword-mcp"
+    ],
+    "version": "aigroup-mdtoword-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 700 of Frame 3, block 6. Four tools, none annotated. markdown_to_docx writes <outputPath>/<filename>. .docx outputs are observed by entry, with docProps/core.xml declared away as for server 31.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "*.docx"
+          ]
+        },
+        {
+          "kind": "zip-doc",
+          "path": "",
+          "patterns": [
+            "*.docx"
+          ],
+          "drop_entries": [
+            "docProps/core.xml"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "out"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n5"
+  },
+  "fixtures": [
+    {
+      "tool": "markdown_to_docx",
+      "id": "markdown_to_docx",
+      "arguments": {
+        "markdown": "# Audit memo\n\nOne paragraph.\n",
+        "filename": "memo.docx",
+        "outputPath": "{root}/out"
+      },
+      "note": "Converts seeded Markdown to a caller-named file."
+    }
+  ]
+}

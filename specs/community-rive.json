@@ -1,0 +1,77 @@
+{
+  "server": {
+    "name": "community-rive",
+    "command": [
+      "npx",
+      "-y",
+      "rive-mcp-server"
+    ],
+    "container_command": [
+      "rive-mcp"
+    ],
+    "version": "rive-mcp-server (npm latest at image build time)",
+    "note": "Drawn in frame order at position 349 of Frame 3; re-entered under amendment 9.8 (its declared binary is rive-mcp). Thirty five tools, none annotated. riv_setup copies a bundled skill into a client's skills directory; it is exercised only at project scope, which lands inside the trial root. Rendering and network asset search are not exercised. riv_create validates with a headless Chromium the image does not have; the profile is stated here so its rows are read as rows under this profile. riv_edit is not exercised, since its only source of a .riv is that same tool.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "out",
+        "proj"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:reprobe-bin-n1"
+  },
+  "fixtures": [
+    {
+      "tool": "riv_create",
+      "id": "create_riv",
+      "arguments": {
+        "outPath": "{root}/out/demo.riv",
+        "scene": {
+          "artboard": {
+            "name": "Demo",
+            "width": 200,
+            "height": 200
+          },
+          "backgroundColor": "#1a1a2e",
+          "shapes": [
+            {
+              "id": "box",
+              "type": "rect",
+              "x": 100,
+              "y": 100,
+              "width": 60,
+              "height": 60,
+              "fill": {
+                "color": "#e94560"
+              }
+            }
+          ]
+        }
+      },
+      "note": "Creates a .riv with one shape at a caller-named path."
+    },
+    {
+      "tool": "riv_setup",
+      "id": "setup_project_skill",
+      "arguments": {
+        "scope": "project",
+        "projectDir": "{root}/proj"
+      },
+      "note": "Copies the bundled skill into the project's .claude/skills."
+    }
+  ]
+}

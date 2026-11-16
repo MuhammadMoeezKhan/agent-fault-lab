@@ -1,0 +1,75 @@
+{
+  "server": {
+    "name": "community-dwin-research-adoption",
+    "command": [
+      "npx",
+      "-y",
+      "dwin-research-adoption"
+    ],
+    "container_command": [
+      "dwin-research-adoption"
+    ],
+    "version": "dwin-research-adoption (npm latest at image build time)",
+    "note": "Drawn in frame order at position 622 of Frame 3, block 6. Twenty seven tools, ten not declared read only. Its state lives under HOME/.local/share/dwin-research-adoption. Each job tool records one run: a receipt under receipts/, a run directory, event lines, and rows in factory.sqlite, all keyed by a run id derived from the clock. The receipt is observed, as a tally with the run id, the start and finish stamps, artifact hashes and durations declared away; the run directory, events and database are derived from the same run and are not observed. Tools that need operator-registered sources or an arXiv fetch are not exercised.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store"
+          ]
+        },
+        {
+          "kind": "tally",
+          "path": "home/.local/share/dwin-research-adoption/receipts",
+          "name": "run-receipts",
+          "patterns": [
+            "*.json"
+          ],
+          "drop_keys": [
+            "run_id",
+            "started_at",
+            "finished_at",
+            "sha256",
+            "duration_ms"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "factory_run_health",
+      "id": "run_health_job",
+      "arguments": {},
+      "note": "Runs the declared local health job, which records one run."
+    },
+    {
+      "tool": "memory_validate",
+      "id": "validate_memory",
+      "arguments": {},
+      "note": "Revalidates memory structure through a recorded run."
+    },
+    {
+      "tool": "evidence_sync",
+      "id": "sync_evidence",
+      "arguments": {},
+      "note": "Indexes registered sources; none are registered, so the run records what it found."
+    }
+  ]
+}

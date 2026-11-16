@@ -1,0 +1,67 @@
+{
+  "server": {
+    "name": "community-viberaven",
+    "command": [
+      "npx",
+      "-y",
+      "@viberaven/mcp"
+    ],
+    "container_command": [
+      "viberaven-mcp"
+    ],
+    "version": "@viberaven/mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 267 of Frame 3; re-entered under amendment 9.8 (its declared binary is viberaven-mcp). Twenty nine tools, none annotated. Every fixture passes cwd, a seeded project directory with one Supabase migration. Tools that need sign-in, quota, payment, or a pinned Docker image are not exercised.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "app/package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
+        "app/supabase/migrations/0001_init.sql": "create table notes (id bigint primary key, body text);\n",
+        "app/CLAUDE.md": "# Project notes\n"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:reprobe-bin-n5"
+  },
+  "fixtures": [
+    {
+      "tool": "viberaven_init_rules",
+      "id": "init_rules_claude",
+      "arguments": {
+        "cwd": "{root}/app",
+        "agents": "claude"
+      },
+      "note": "Installs the tool's rules into the project's CLAUDE.md, which is seeded with one line."
+    },
+    {
+      "tool": "viberaven_check_readiness",
+      "id": "check_readiness",
+      "arguments": {
+        "cwd": "{root}/app"
+      },
+      "note": "Runs the local check, which writes its artifacts under .viberaven."
+    },
+    {
+      "tool": "viberaven_clean_plan",
+      "id": "clean_plan",
+      "arguments": {
+        "cwd": "{root}/app"
+      },
+      "note": "Writes a cleanup plan for .viberaven artifacts."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "server": {
+    "name": "community-cmdxray",
+    "command": [
+      "npx",
+      "-y",
+      "cmdxray",
+      "mcp"
+    ],
+    "container_command": [
+      "cmdxray",
+      "mcp"
+    ],
+    "version": "cmdxray (npm latest at image build time)",
+    "note": "Drawn in frame order at position 670 of Frame 3, block 6. Three tools, none annotated, explaining and checking shell text offline. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "check_command_safety",
+      "id": "check_command",
+      "arguments": {
+        "command": "rm -rf ./build"
+      },
+      "note": "Checks one command; nothing is executed."
+    },
+    {
+      "tool": "lint_script",
+      "id": "lint_script",
+      "arguments": {
+        "script": "#!/bin/sh\nset -e\ncp a b\n"
+      },
+      "note": "Lints a seeded script."
+    }
+  ]
+}

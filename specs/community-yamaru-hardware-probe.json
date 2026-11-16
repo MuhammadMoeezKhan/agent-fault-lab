@@ -1,0 +1,47 @@
+{
+  "server": {
+    "name": "community-yamaru-hardware-probe",
+    "command": [
+      "npx",
+      "-y",
+      "@yamaru-eu/hardware-probe"
+    ],
+    "container_command": [
+      "yamaru-probe"
+    ],
+    "version": "@yamaru-eu/hardware-probe (npm latest at image build time)",
+    "note": "Drawn in frame order at position 333 of Frame 3; re-entered under amendment 9.8 (its declared binary is yamaru-probe). Eleven tools, none annotated, none taking a path; they read the machine. Two are exercised. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:reprobe-bin-n1"
+  },
+  "fixtures": [
+    {
+      "tool": "analyze_local_system",
+      "id": "analyze_local_system",
+      "arguments": {},
+      "note": "Reads hardware specifications."
+    },
+    {
+      "tool": "analyze_ram_pressure",
+      "id": "analyze_ram_pressure",
+      "arguments": {},
+      "note": "Reads memory pressure."
+    }
+  ]
+}

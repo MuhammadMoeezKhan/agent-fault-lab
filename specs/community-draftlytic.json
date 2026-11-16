@@ -1,0 +1,86 @@
+{
+  "server": {
+    "name": "community-draftlytic",
+    "command": [
+      "npx",
+      "-y",
+      "draftlytic-mcp"
+    ],
+    "container_command": [
+      "draftlytic-mcp"
+    ],
+    "version": "draftlytic-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 602 of Frame 3, block 6. Four tools, none annotated, none taking a path. Two are exercised: render_prd and open_in_draftlytic. HOME is observed, since there is no path argument.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n1"
+  },
+  "fixtures": [
+    {
+      "tool": "render_prd",
+      "id": "render_a_prd",
+      "arguments": {
+        "spec": {
+          "name": "Audit tracker",
+          "overview": "Track audit fixtures.",
+          "target_audience": "engineers",
+          "platforms": [
+            "web"
+          ],
+          "tech_stack": [
+            "python"
+          ],
+          "features": [
+            {
+              "title": "List fixtures",
+              "description": "list fixtures",
+              "priority": "must-have"
+            }
+          ]
+        }
+      },
+      "note": "Renders a seeded spec to Markdown."
+    },
+    {
+      "tool": "open_in_draftlytic",
+      "id": "build_a_link",
+      "arguments": {
+        "idea": "an audit tracker",
+        "spec": {
+          "name": "Audit tracker",
+          "overview": "Track audit fixtures.",
+          "target_audience": "engineers",
+          "platforms": [
+            "web"
+          ],
+          "tech_stack": [
+            "python"
+          ],
+          "features": [
+            {
+              "title": "List fixtures",
+              "description": "list fixtures",
+              "priority": "must-have"
+            }
+          ]
+        }
+      },
+      "note": "Builds a link; measured for whether anything is recorded."
+    }
+  ]
+}

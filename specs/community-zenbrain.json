@@ -1,0 +1,94 @@
+{
+  "server": {
+    "name": "community-zenbrain",
+    "command": [
+      "npx",
+      "-y",
+      "@zensation/mcp"
+    ],
+    "container_command": [
+      "zenbrain-mcp"
+    ],
+    "version": "@zensation/mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 547 of Frame 3; re-entered under amendment 9.8 (its declared binary is zenbrain-mcp). Five tools; store declares idempotentHint false, forget declares idempotentHint true. The store is zenbrain.db in the working directory, observed as SQLite with the generated id, timestamps, the review schedule and access counters declared away.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "zenbrain.db",
+            "zenbrain.db-*"
+          ]
+        },
+        {
+          "kind": "sqlite",
+          "path": "zenbrain.db",
+          "ignore_columns": [
+            "id",
+            "created_at",
+            "last_accessed",
+            "fsrs_next_review",
+            "updated_at",
+            "access_count"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:reprobe-bin-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "zenbrain_store",
+      "id": "store_a_fact",
+      "arguments": {
+        "content": "The audit reads the backend before retrying.",
+        "type": "fact"
+      },
+      "probes": [
+        [
+          "zenbrain_recall",
+          {
+            "query": "audit backend"
+          }
+        ]
+      ],
+      "note": "Stores one fact. zenbrain_recall reads it back; its reply carries generated ids and scores, so no stability is declared."
+    },
+    {
+      "tool": "zenbrain_forget",
+      "id": "forget_a_fact",
+      "arguments": {
+        "id": "{mem}",
+        "layer": "semantic"
+      },
+      "prelude": [
+        [
+          "zenbrain_store",
+          {
+            "content": "A fact to forget.",
+            "type": "fact"
+          },
+          {
+            "mem": "id"
+          }
+        ]
+      ],
+      "note": "Forgets a fact stored by the fixture prelude, whose id is captured from the prelude's reply."
+    }
+  ]
+}

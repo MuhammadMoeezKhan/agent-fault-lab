@@ -1,0 +1,69 @@
+{
+  "server": {
+    "name": "community-impressum-lint-de",
+    "command": [
+      "npx",
+      "-y",
+      "@readystack/impressum-lint-de",
+      "--mcp"
+    ],
+    "container_command": [
+      "impressum-lint-de",
+      "--mcp"
+    ],
+    "version": "@readystack/impressum-lint-de (npm latest at image build time)",
+    "note": "Drawn in frame order at position 710 of Frame 3, block 6. Three tools, none annotated. check_file and check_text are free; check_dir requires a licence this study does not buy, so its rows record the refusal rather than a sweep.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "site"
+      ],
+      "files": {
+        "site/impressum.html": "<html><body><h1>Impressum</h1><p>Muster GmbH</p></body></html>\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n6"
+  },
+  "fixtures": [
+    {
+      "tool": "check_file",
+      "id": "check_one_file",
+      "arguments": {
+        "path": "{root}/site/impressum.html"
+      },
+      "note": "The free single-file check, against a seeded Impressum page."
+    },
+    {
+      "tool": "check_text",
+      "id": "check_text_with_a_path",
+      "arguments": {
+        "path": "{root}/site/impressum.html",
+        "text": "<html><body><h1>Impressum</h1><p>Muster GmbH</p></body></html>\n"
+      },
+      "note": "The free text check. The schema also takes a path, so the call carries one in case the tool writes alongside it."
+    },
+    {
+      "tool": "check_dir",
+      "id": "check_the_folder",
+      "arguments": {
+        "dir": "{root}/site",
+        "ext": "html"
+      },
+      "note": "The licensed sweep, called without a licence. What the server does at that boundary is the measurement; nothing is purchased."
+    }
+  ]
+}

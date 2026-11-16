@@ -1,0 +1,222 @@
+{
+  "server": {
+    "name": "community-mcp-architector",
+    "command": [
+      "npx",
+      "-y",
+      "mcp-architector"
+    ],
+    "container_command": [
+      "mcp-architector"
+    ],
+    "version": "mcp-architector (npm latest at image build time)",
+    "note": "Drawn in frame order at position 632 of Frame 3, block 6. Twenty nine tools, none annotated. Projects live under HOME/.mcp-architector/<projectId>: architecture.json, one file per entry under entries/ and one per module under modules/, each named by a generated id, plus entries/index.json. The server prelude creates project audit with one module, core; set-project-architecture is not under test. architecture.json is observed as a JSON document and entries/ and modules/ as tallies (names not compared), all with id, moduleId, createdAt and updatedAt declared away; list lengths are kept.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "prelude": [
+      [
+        "set-project-architecture",
+        {
+          "projectId": "audit",
+          "description": "Audit project",
+          "modules": [
+            {
+              "name": "core",
+              "description": "core module"
+            }
+          ]
+        }
+      ]
+    ],
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": "home/.mcp-architector/audit",
+          "name": "architecture",
+          "patterns": [
+            "architecture.json"
+          ],
+          "drop_keys": [
+            "id",
+            "moduleId",
+            "createdAt",
+            "updatedAt"
+          ]
+        },
+        {
+          "kind": "tally",
+          "path": "home/.mcp-architector/audit/entries",
+          "name": "entries",
+          "patterns": [
+            "*.json"
+          ],
+          "drop_keys": [
+            "id",
+            "moduleId",
+            "createdAt",
+            "updatedAt"
+          ]
+        },
+        {
+          "kind": "tally",
+          "path": "home/.mcp-architector/audit/modules",
+          "name": "modules",
+          "patterns": [
+            "*.json"
+          ],
+          "drop_keys": [
+            "id",
+            "moduleId",
+            "createdAt",
+            "updatedAt"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "set-entries",
+      "id": "set_entries_one",
+      "arguments": {
+        "projectId": "audit",
+        "moduleName": "core",
+        "entries": [
+          {
+            "kind": "fact",
+            "title": "retry rule",
+            "summary": "read before retry"
+          }
+        ]
+      },
+      "probes": [
+        [
+          "list-entries",
+          {
+            "projectId": "audit"
+          }
+        ]
+      ],
+      "probe_drop_keys": [
+        "id",
+        "moduleId",
+        "createdAt",
+        "updatedAt"
+      ],
+      "note": "Bulk set of one entry identified by kind and title."
+    },
+    {
+      "tool": "set-entry",
+      "id": "set_entry_without_id",
+      "arguments": {
+        "projectId": "audit",
+        "kind": "fact",
+        "title": "retry rule",
+        "summary": "read before retry",
+        "refs": {
+          "moduleName": "core"
+        }
+      },
+      "probes": [
+        [
+          "list-entries",
+          {
+            "projectId": "audit"
+          }
+        ]
+      ],
+      "probe_drop_keys": [
+        "id",
+        "moduleId",
+        "createdAt",
+        "updatedAt"
+      ],
+      "note": "Single entry with no id passed."
+    },
+    {
+      "tool": "set-module-details",
+      "id": "set_module_details",
+      "arguments": {
+        "projectId": "audit",
+        "name": "core",
+        "description": "core module, detailed",
+        "files": [
+          "src/core.ts"
+        ],
+        "inputs": "request",
+        "outputs": "response"
+      },
+      "probes": [
+        [
+          "get-module-details",
+          {
+            "projectId": "audit",
+            "moduleName": "core"
+          }
+        ]
+      ],
+      "probe_drop_keys": [
+        "id",
+        "moduleId",
+        "createdAt",
+        "updatedAt"
+      ],
+      "note": "Updates the seeded module by name."
+    },
+    {
+      "tool": "set-entries",
+      "id": "set_entries_two_F5",
+      "arguments": {
+        "projectId": "audit",
+        "moduleName": "core",
+        "entries": [
+          {
+            "kind": "fact",
+            "title": "first",
+            "summary": "one"
+          },
+          {
+            "kind": "fact",
+            "title": "second",
+            "summary": "two"
+          }
+        ]
+      },
+      "probes": [
+        [
+          "list-entries",
+          {
+            "projectId": "audit"
+          }
+        ]
+      ],
+      "probe_drop_keys": [
+        "id",
+        "moduleId",
+        "createdAt",
+        "updatedAt"
+      ],
+      "note": "Two entries in one call, the F5 shape."
+    }
+  ]
+}
