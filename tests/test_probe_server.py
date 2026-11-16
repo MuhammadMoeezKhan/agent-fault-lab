@@ -106,3 +106,39 @@ def test_distinct_binaries_and_python_packages_do_not_collide():
 def test_a_lone_candidate_never_collides():
     module = _load()
     assert module.shared_binaries([{"name": "a", "runner": "npx", "package": "@a/mcp"}]) == {}
+
+
+def test_npx_runs_a_single_declared_binary_whatever_its_name():
+    module = _load()
+    assert module.npx_binary("@kenwea/mcp", {"kenwea-mcp": "src/cli.js"}) == "kenwea-mcp"
+
+
+def test_npx_picks_the_binary_named_after_the_unscoped_package():
+    module = _load()
+    assert module.npx_binary("@x/tool", {"tool": "a.js", "tool-cli": "b.js"}) == "tool"
+
+
+def test_npx_cannot_choose_among_several_unmatched_binaries():
+    module = _load()
+    assert module.npx_binary("@kenwea/mcp", {"kenwea-mcp": "a", "kenwea": "a"}) is None
+
+
+def test_a_string_bin_is_named_after_the_unscoped_package():
+    module = _load()
+    assert module.npx_binary("@x/thing", "dist/index.js") == "thing"
+
+
+def test_no_bin_means_npx_has_nothing_to_run():
+    module = _load()
+    assert module.npx_binary("pkg", None) is None
+    assert module.npx_binary("pkg", {}) is None
+
+
+def test_collisions_use_resolved_names_when_given():
+    module = _load()
+    rows = [
+        {"name": "a", "runner": "npx", "package": "@a/mcp"},
+        {"name": "b", "runner": "npx", "package": "@b/mcp"},
+    ]
+    assert module.shared_binaries(rows, {"@a/mcp": "a-mcp", "@b/mcp": "b-mcp"}) == {}
+    assert module.shared_binaries(rows, {"@a/mcp": "x", "@b/mcp": "x"}) == {"a": ["b"], "b": ["a"]}

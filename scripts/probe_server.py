@@ -88,6 +88,7 @@ def probe_once(
     env_extra: dict[str, str],
     timeout_s: float,
     image: str | None = None,
+    binary: str | None = None,
 ) -> dict[str, Any]:
     """Start a candidate and read tools/list. Calls no tool.
 
@@ -111,6 +112,8 @@ def probe_once(
 
         containment = Containment(image=image, mount=root)
         command = installed_argv(command)
+        if binary:
+            command = [binary, *command[1:]]
         # The container carries its own HOME on a tmpfs, and the host npm
         # cache is meaningless inside it.
         env = {
@@ -184,7 +187,52 @@ def build_probe_image(
     return {"installed": installed, "failed": failed}
 
 
-def shared_binaries(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+def npx_binary(package: str, bin_field: Any) -> str | None:
+    """The executable `npx -y <package>` would run, from the package's `bin`.
+
+    npm's rule: a string `bin` installs one binary named after the package
+    without its scope; an object with a single entry runs that entry whatever
+    its name; with several entries, the one named after the unscoped package
+    runs, and otherwise npx cannot choose and fails. No `bin` at all fails
+    too. Those failures are the registry command failing, so they stay
+    failures; only the name is taken from the package rather than guessed.
+    """
+    unscoped = package.rsplit("/", 1)[-1]
+    if isinstance(bin_field, str) and bin_field:
+        return unscoped
+    if isinstance(bin_field, dict) and bin_field:
+        if len(bin_field) == 1:
+            return next(iter(bin_field))
+        if unscoped in bin_field:
+            return unscoped
+    return None
+
+
+def declared_bins(image: str, packages: list[str]) -> dict[str, Any]:
+    """Read each installed npm package's `bin` field inside the image."""
+    if not packages:
+        return {}
+    script = (
+        "const fs=require('fs');const out={};"
+        "for(const p of process.argv.slice(1)){"
+        "try{out[p]=JSON.parse(fs.readFileSync('/usr/local/lib/node_modules/'+p+'/package.json','utf8')).bin??null}"
+        "catch(e){out[p]='__missing__'}}"
+        "console.log(JSON.stringify(out))"
+    )
+    done = subprocess.run(
+        ["docker", "run", "--rm", "--network=none", "--entrypoint", "node", image, "-e", script, *packages],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        return json.loads(done.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {}
+
+
+def shared_binaries(
+    rows: list[dict[str, Any]], resolved: dict[str, str | None] | None = None
+) -> dict[str, list[str]]:
     """Candidates in one image whose launch commands map to the same binary.
 
     Inside the image a package is started by its binary name, derived from
@@ -203,6 +251,11 @@ def shared_binaries(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
 
     by_binary: dict[str, list[str]] = {}
     for row in rows:
+        if resolved is not None and row.get("package") in resolved:
+            name = resolved[row["package"]]
+            if name:
+                by_binary.setdefault(name, []).append(row.get("name", ""))
+            continue
         try:
             argv = installed_argv(command_for(row, list(row.get("launch_argv") or []), "/work"))
         except ValueError:
@@ -222,6 +275,8 @@ def probe(
     timeout_s: float,
     allow_fallback: bool,
     image: str | None = None,
+    binary: str | None = None,
+    binary_source: str = "guessed",
 ) -> dict[str, Any]:
     package = row["package"]
     env_extra = STATE_ENV.get(package, {})
@@ -232,6 +287,7 @@ def probe(
         "registry_argv": row.get("launch_argv") or [],
         "registry_needs_input": row.get("launch_needs_input") or [],
         "attempts": [],
+        "binary_source": binary_source,
     }
     with tempfile.TemporaryDirectory(prefix="afl-probe-") as root:
         os.makedirs(os.path.join(root, "db"), exist_ok=True)
@@ -249,7 +305,8 @@ def probe(
                 for item in argv
             ]
             attempt = probe_once(
-                command_for(row, argv, root), root, env_extra, timeout_s, image
+                command_for(row, argv, root), root, env_extra, timeout_s, image,
+                binary,
             )
             attempt["argv_source"] = source
             result["attempts"].append(attempt)
@@ -328,7 +385,14 @@ def main() -> int:
     else:
         uninstallable = set()
     results = []
-    collisions = shared_binaries([rows[n] for n in args.names if n in rows])
+    wanted_rows = [rows[n] for n in args.names if n in rows]
+    npm_packages = [r["package"] for r in wanted_rows if r["runner"] == "npx"]
+    bins = declared_bins(args.contain, npm_packages)
+    resolved: dict[str, str | None] = {}
+    for package, field in bins.items():
+        if field != "__missing__":
+            resolved[package] = npx_binary(package, field)
+    collisions = shared_binaries(wanted_rows, resolved)
     for name in args.names:
         row = rows.get(name)
         if row is None:
@@ -361,7 +425,31 @@ def main() -> int:
                 }
             )
             continue
-        result = probe(row, args.timeout, not args.no_fallback, args.contain)
+        binary = None
+        source = "guessed"
+        if row["runner"] == "npx" and row["package"] in resolved:
+            binary = resolved[row["package"]]
+            source = "declared"
+            if binary is None:
+                # npx itself could not choose an executable, so the
+                # registry's command fails as published. Recorded as such,
+                # with the bin field, rather than run under a guessed name.
+                print(f"  npx cannot choose an executable: bin={json.dumps(bins[row['package']])}")
+                results.append(
+                    {
+                        "server": name,
+                        "package": row["package"],
+                        "runner": row["runner"],
+                        "started_via": None,
+                        "binary_source": "declared",
+                        "npx_unresolvable": bins[row["package"]],
+                        "attempts": [],
+                    }
+                )
+                continue
+        result = probe(
+            row, args.timeout, not args.no_fallback, args.contain, binary, source
+        )
         results.append(result)
         if result["started_via"] is None:
             for attempt in result["attempts"]:
