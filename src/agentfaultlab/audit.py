@@ -262,6 +262,15 @@ class Fixture:
     #: indistinguishable from never having looked, and leaving those fixtures
     #: permanently unknown would make the measure unreportable.
     probe_stable: bool = False
+    #: Seconds to wait before every application after the first, and before a
+    #: retry. Zero, the default, is the audit as preregistered. It exists for
+    #: servers that derive an output's identity from the wall clock (a file
+    #: named by the second it was written): back-to-back calls then collide by
+    #: accident of timing, and whether a repeat lands twice is decided by
+    #: where the second boundary falls rather than by the server. A spec that
+    #: sets it is declaring the client's retry pacing, and every row from such
+    #: a fixture carries the value so it is never pooled unawares.
+    application_gap_s: float = 0.0
     note: str = ""
     #: Distinguishes two fixtures for the same tool. One SQL write tool can
     #: be an INSERT in one fixture and an UPDATE in another, and those behave
@@ -590,9 +599,13 @@ class Audit:
                     )
                 arguments = fixture.resolve(root, bindings)
                 for attempt in range(1, applications + 1):
+                    if attempt > 1 and fixture.application_gap_s:
+                        time.sleep(fixture.application_gap_s)
                     call = session.call_tool(fixture.tool, arguments, attempt=attempt)
                     result.calls.append(call)
                 if retry_if_unsure and result.calls and not result.calls[-1].caller_saw_success:
+                    if fixture.application_gap_s:
+                        time.sleep(fixture.application_gap_s)
                     retry = session.call_tool(
                         fixture.tool, arguments, attempt=len(result.calls) + 1
                     )
@@ -804,6 +817,11 @@ class Audit:
             multiplicities: list[str] = []
             unsure = False
             notes: list[str] = []
+            if fixture.application_gap_s:
+                notes.append(
+                    f"application gap {fixture.application_gap_s:g}s declared "
+                    "(not the preregistered pacing)"
+                )
             rejections = 0
             retries = 0
             for _ in range(self.repeats):

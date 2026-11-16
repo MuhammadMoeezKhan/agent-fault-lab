@@ -45,6 +45,7 @@ from .observers import (
     FilesystemObserver,
     GitObserver,
     JsonDocObserver,
+    PdfDocObserver,
     SqliteObserver,
     ZipDocObserver,
 )
@@ -138,6 +139,18 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             drop_keys=tuple(config.get("drop_keys") or ()),
             drop_entries=tuple(config.get("drop_entries") or ()),
             name=config.get("name", "zip-doc"),
+        )
+    if kind == "pdf-doc":
+        # Same contract again: the files are named by the spec, and so are the
+        # trailer keys whose values the audit commits to not measuring.
+        # `tally` drops file names from the comparison, for servers that name
+        # each output by the time it was written.
+        return lambda root: PdfDocObserver(
+            os.path.join(root, config.get("path", "")),
+            patterns=tuple(config.get("patterns") or ("*.pdf",)),
+            drop_keys=tuple(config.get("drop_keys") or ()),
+            tally=bool(config.get("tally", False)),
+            name=config.get("name", "pdf-doc"),
         )
     if kind == "composite":
         parts = [_observer_factory(part) for part in config.get("parts", [])]
@@ -408,6 +421,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
                 prelude=_prelude(raw.get("prelude"), allow_capture=True),
                 probe_drop_keys=tuple(raw.get("probe_drop_keys") or ()),
                 probe_stable=bool(raw.get("probe_stable", False)),
+                application_gap_s=float(raw.get("application_gap_s", 0.0)),
                 note=raw.get("note", ""),
                 id=raw.get("id", ""),
             )
