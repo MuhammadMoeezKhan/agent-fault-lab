@@ -147,3 +147,49 @@ def test_the_fixture_resolves_arguments_against_the_bindings():
 def test_the_test_file_writes_no_em_dashes():
     with open(__file__) as handle:
         assert "\u2014" not in handle.read()
+
+
+class _StubCall:
+    def __init__(self, result):
+        self.result = result
+        self.error = None
+        self.caller_saw_success = True
+
+
+class _StubSession:
+    """Answers a plan call with a plan, a preview call with a token."""
+
+    def __init__(self):
+        self.seen = []
+
+    def call_tool(self, tool, arguments, attempt=1):
+        self.seen.append((tool, arguments))
+        if tool == "plan":
+            return _StubCall({"structuredContent": {"plan": {"edits": [1, 2]}}})
+        if tool == "preview":
+            return _StubCall({"structuredContent": {"confirm_token": "tok-1"}})
+        return _StubCall({"structuredContent": {}})
+
+
+def test_a_later_prelude_call_sees_an_earlier_capture():
+    """A preview-then-apply flow needs the plan in the preview call."""
+    from agentfaultlab.audit import Audit, Fixture
+    from test_mcp_audit import make_target
+
+    audit = Audit(make_target(), repeats=1, settle_s=0.0)
+    fixture = Fixture(
+        tool="apply",
+        arguments={"plan": "{plan}", "confirm_token": "{token}"},
+        prelude=(
+            ("plan", {"symbol": "a"}, {"plan": "plan"}),
+            ("preview", {"plan": "{plan}", "mode": "preview"}, {"token": "confirm_token"}),
+        ),
+    )
+    session = _StubSession()
+    bindings = audit._run_prelude(session, "/root", fixture)
+    assert session.seen[1] == ("preview", {"plan": {"edits": [1, 2]}, "mode": "preview"})
+    assert bindings == {"plan": {"edits": [1, 2]}, "token": "tok-1"}
+    assert fixture.resolve("/root", bindings) == {
+        "plan": {"edits": [1, 2]},
+        "confirm_token": "tok-1",
+    }

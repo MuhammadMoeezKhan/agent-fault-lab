@@ -671,6 +671,12 @@ class Audit:
             ]
         bindings: dict[str, Any] = {}
         for tool, arguments, captures in calls:
+            # Earlier captures are visible to later prelude calls, so a
+            # preview that returns a plan and a confirm step that needs both
+            # the plan and its token can be chained. Root substitution has
+            # already happened, so this only fills in captured names.
+            if bindings:
+                arguments = _substitute(arguments, "", bindings)
             call = session.call_tool(tool, arguments)
             if not call.caller_saw_success:
                 raise SessionError(
