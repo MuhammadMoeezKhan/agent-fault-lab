@@ -184,6 +184,39 @@ def build_probe_image(
     return {"installed": installed, "failed": failed}
 
 
+def shared_binaries(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Candidates in one image whose launch commands map to the same binary.
+
+    Inside the image a package is started by its binary name, derived from
+    the last segment of the package name (`installed_argv`). Two packages
+    such as `@priceof/mcp-server` and `@schelling/mcp-server` both map to
+    `mcp-server`, and one image holds only one `/usr/local/bin/mcp-server`,
+    so probing the second runs the first one's server and records its tools
+    under the wrong name. That happened in block 6, and the same shape (a
+    binary called `mcp`) occurs in four earlier batches. A probe in a shared
+    image cannot tell those candidates apart, so they are reported as a
+    collision and re-probed alone, each in an image of its own.
+
+    Returns server name to the other servers it collides with.
+    """
+    from agentfaultlab.container import installed_argv
+
+    by_binary: dict[str, list[str]] = {}
+    for row in rows:
+        try:
+            argv = installed_argv(command_for(row, list(row.get("launch_argv") or []), "/work"))
+        except ValueError:
+            continue
+        if argv:
+            by_binary.setdefault(argv[0], []).append(row.get("name", ""))
+    collisions: dict[str, list[str]] = {}
+    for names in by_binary.values():
+        if len(names) > 1:
+            for name in names:
+                collisions[name] = [other for other in names if other != name]
+    return collisions
+
+
 def probe(
     row: dict[str, Any],
     timeout_s: float,
@@ -295,12 +328,28 @@ def main() -> int:
     else:
         uninstallable = set()
     results = []
+    collisions = shared_binaries([rows[n] for n in args.names if n in rows])
     for name in args.names:
         row = rows.get(name)
         if row is None:
             print(f"{name}: not in the frame", file=sys.stderr)
             continue
         print(f"\n=== {name} ({row['package']})", flush=True)
+        if name in collisions:
+            print(
+                "  shares its binary name with "
+                f"{', '.join(collisions[name])} in this image: not probed here, "
+                "re-probe it alone"
+            )
+            results.append(
+                {
+                    "server": name,
+                    "package": row["package"],
+                    "started_via": None,
+                    "binary_collision": collisions[name],
+                }
+            )
+            continue
         if row["package"] in uninstallable:
             print("  cannot be installed in the audit image, so not auditable")
             results.append(

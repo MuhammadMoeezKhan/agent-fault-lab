@@ -79,3 +79,30 @@ def test_an_unknown_runner_stops_the_build_rather_than_guessing(monkeypatch):
         )
     assert "bun" in str(caught.value)
     assert seen == []
+
+
+def test_two_packages_with_one_binary_name_are_flagged_not_probed():
+    """Block 6: two scoped packages both map to `mcp-server` in one image."""
+    module = _load()
+    rows = [
+        {"name": "priceof", "runner": "npx", "package": "@priceof/mcp-server"},
+        {"name": "schelling", "runner": "npx", "package": "@schelling/mcp-server"},
+        {"name": "other", "runner": "npx", "package": "@x/other-server"},
+    ]
+    collisions = module.shared_binaries(rows)
+    assert collisions == {"priceof": ["schelling"], "schelling": ["priceof"]}
+
+
+def test_distinct_binaries_and_python_packages_do_not_collide():
+    module = _load()
+    rows = [
+        {"name": "a", "runner": "npx", "package": "@a/mcp"},
+        {"name": "b", "runner": "uvx", "package": "b-mcp"},
+        {"name": "c", "runner": "npx", "package": "c-mcp", "launch_argv": ["serve"]},
+    ]
+    assert module.shared_binaries(rows) == {}
+
+
+def test_a_lone_candidate_never_collides():
+    module = _load()
+    assert module.shared_binaries([{"name": "a", "runner": "npx", "package": "@a/mcp"}]) == {}
