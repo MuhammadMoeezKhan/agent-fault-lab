@@ -1,0 +1,69 @@
+{
+  "server": {
+    "name": "community-base-image-eol-lint",
+    "command": [
+      "npx",
+      "-y",
+      "@readystack/base-image-eol-lint",
+      "--mcp"
+    ],
+    "container_command": [
+      "base-image-eol-lint",
+      "--mcp"
+    ],
+    "version": "@readystack/base-image-eol-lint (npm latest at image build time)",
+    "note": "Drawn in frame order at position 534 of Frame 3, block 5. Three tools, none annotated. check_file and check_text are free; check_dir requires a licence this study does not buy, so its rows record the refusal rather than a sweep.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "build"
+      ],
+      "files": {
+        "build/Dockerfile": "FROM node:14-buster\nRUN apt-get update\nCMD [\"node\",\"index.js\"]\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n5"
+  },
+  "fixtures": [
+    {
+      "tool": "check_file",
+      "id": "check_one_file",
+      "arguments": {
+        "path": "{root}/build/Dockerfile"
+      },
+      "note": "The free single-file check, against a seeded Dockerfile on an end-of-life base."
+    },
+    {
+      "tool": "check_text",
+      "id": "check_text_with_a_path",
+      "arguments": {
+        "path": "{root}/build/Dockerfile",
+        "text": "FROM node:14-buster\nRUN apt-get update\nCMD [\"node\",\"index.js\"]\n"
+      },
+      "note": "The free text check. The schema also takes a path, so the call carries one in case the tool writes alongside it."
+    },
+    {
+      "tool": "check_dir",
+      "id": "check_the_folder",
+      "arguments": {
+        "dir": "{root}/build",
+        "ext": "Dockerfile"
+      },
+      "note": "The licensed sweep, called without a licence. What the server does at that boundary is the measurement; nothing is purchased."
+    }
+  ]
+}

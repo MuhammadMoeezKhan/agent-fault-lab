@@ -1,0 +1,196 @@
+{
+  "server": {
+    "name": "community-slimdex",
+    "command": [
+      "npx",
+      "-y",
+      "slimdex-mcp"
+    ],
+    "container_command": [
+      "slimdex-mcp"
+    ],
+    "version": "slimdex-mcp (npm latest at image build time; v1.1.0 build 2026-11-03 observed)",
+    "note": "Drawn in frame order at position 528 of Frame 3, block 5. Thirty tools; the server roots itself at its working directory, which is the trial root. Its bookkeeping under .slimdex (index.json, journal.json, stats.json, .gitignore and the timestamp-named snapshots/ copies taken before each edit) is projected away by declaration, so the comparison sees the source files, the client settings file install_hook writes, and the two documents the memory and digest tools own. The snapshot tool is not exercised for the same reason: its whole effect is a timestamp-named backup copy. memory.json and digest.json drop the generated id and the created and savedAt stamps; list lengths are kept.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            ".slimdex",
+            ".slimdex/*"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": ".slimdex",
+          "name": "slimdex-docs",
+          "patterns": [
+            "memory.json",
+            "digest.json"
+          ],
+          "drop_keys": [
+            "id",
+            "created",
+            "savedAt"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "app.js": "function alpha() {\n  return 1;\n}\n\nfunction beta() {\n  return 2;\n}\n",
+        ".slimdex/memory.json": "{\n  \"version\": 1,\n  \"facts\": [\n    {\n      \"id\": \"seed0001\",\n      \"text\": \"beta is the second function\",\n      \"tags\": [\n        \"seed\"\n      ],\n      \"created\": \"2026-01-01T00:00:00.000Z\"\n    }\n  ]\n}"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block5-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "memory_save",
+      "id": "save_one_note",
+      "arguments": {
+        "text": "retry the export only after reading the ledger",
+        "tags": [
+          "audit"
+        ]
+      },
+      "probes": [
+        [
+          "memory_search",
+          {
+            "q": "ledger"
+          }
+        ]
+      ],
+      "note": "Appends a fact to .slimdex/memory.json under a generated id. memory_search reads it back; its reply carries the generated id, so no stability is declared."
+    },
+    {
+      "tool": "batch",
+      "id": "batch_two_notes",
+      "arguments": {
+        "calls": [
+          {
+            "tool": "memory_save",
+            "args": {
+              "text": "first batched note"
+            }
+          },
+          {
+            "tool": "memory_save",
+            "args": {
+              "text": "second batched note"
+            }
+          }
+        ]
+      },
+      "probes": [
+        [
+          "memory_search",
+          {
+            "q": "batched"
+          }
+        ]
+      ],
+      "note": "Two memory_save calls in one request, the F5 shape. Each lands as its own fact."
+    },
+    {
+      "tool": "memory_delete",
+      "id": "delete_seeded_note",
+      "arguments": {
+        "id": "seed0001"
+      },
+      "probes": [
+        [
+          "memory_list",
+          {}
+        ]
+      ],
+      "note": "Deletes the fact seeded by setup under a fixed id, so the call needs no capture."
+    },
+    {
+      "tool": "replace_symbol",
+      "id": "insert_symbol_after",
+      "arguments": {
+        "after": "alpha",
+        "body": "\nfunction gamma() {\n  return 3;\n}\n"
+      },
+      "prelude": [
+        [
+          "index_repo",
+          {}
+        ]
+      ],
+      "probes": [
+        [
+          "find_definition",
+          {
+            "name": "gamma"
+          }
+        ]
+      ],
+      "note": "INSERT mode: adds a new function after alpha. The fixture prelude builds the index the anchor is resolved against; it calls a different tool and takes no fault. find_definition lists every definition site of the inserted name. probe_stable is set: the read tool's reply carries only file positions and source text, checked against its actual output.",
+      "probe_stable": true
+    },
+    {
+      "tool": "replace_symbol",
+      "id": "replace_symbol_by_name",
+      "arguments": {
+        "name": "beta",
+        "body": "function beta() {\n  return 22;\n}"
+      },
+      "prelude": [
+        [
+          "index_repo",
+          {}
+        ]
+      ],
+      "probes": [
+        [
+          "read_lines",
+          {
+            "path": "app.js",
+            "start": 1,
+            "end": 20
+          }
+        ]
+      ],
+      "note": "REPLACE mode: overwrites beta's definition, resolved by name through the index built by the fixture prelude. probe_stable is set: the read tool's reply carries only file positions and source text, checked against its actual output.",
+      "probe_stable": true
+    },
+    {
+      "tool": "digest_save",
+      "id": "save_digest",
+      "arguments": {
+        "text": "one file, two functions"
+      },
+      "probes": [
+        [
+          "digest_get",
+          {}
+        ]
+      ],
+      "note": "Writes .slimdex/digest.json; the description says it overwrites the previous one."
+    },
+    {
+      "tool": "install_hook",
+      "id": "install_project_hook",
+      "arguments": {
+        "scope": "claude-project"
+      },
+      "note": "Writes a PreToolUse hook into the trial root's .claude/settings.json. The project scope keeps the write inside the trial directory; the container's HOME is throwaway in any case. No read tool covers this file."
+    }
+  ]
+}

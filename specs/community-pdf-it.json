@@ -1,0 +1,86 @@
+{
+  "server": {
+    "name": "community-pdf-it",
+    "command": [
+      "npx",
+      "-y",
+      "pdf-it-mcp"
+    ],
+    "container_command": [
+      "pdf-it-mcp"
+    ],
+    "version": "pdf-it-mcp (npm latest at image build time; 2.1.0 observed)",
+    "note": "Drawn in frame order at position 541 of Frame 3, block 5. Two tools; generate_pdf declares readOnlyHint false and idempotentHint false. It renders through a Chromium bundled in the package, which runs with no network. PDFs are observed by the pdf-doc observer with the CreationDate, ModDate and ID values declared away; two renders of one input were checked to differ in exactly those values and nothing else. Output without output_path goes to HOME/Documents/pdf-it under a name carrying the time of the write, so that directory is observed in tally mode, where file names are not compared.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "*.pdf"
+          ]
+        },
+        {
+          "kind": "pdf-doc",
+          "path": "out",
+          "name": "pdf-named",
+          "drop_keys": [
+            "CreationDate",
+            "ModDate",
+            "ID"
+          ]
+        },
+        {
+          "kind": "pdf-doc",
+          "path": "home/Documents/pdf-it",
+          "name": "pdf-default",
+          "drop_keys": [
+            "CreationDate",
+            "ModDate",
+            "ID"
+          ],
+          "tally": true
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "out"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:block5-n5"
+  },
+  "fixtures": [
+    {
+      "tool": "generate_pdf",
+      "id": "render_to_named_path",
+      "arguments": {
+        "title": "Audit note",
+        "content": "# Audit note\n\n## One\n\nBody text.",
+        "template": "plain",
+        "output_path": "{root}/out/note.pdf"
+      },
+      "note": "A render to a caller-named absolute path."
+    },
+    {
+      "tool": "generate_pdf",
+      "id": "render_to_default_path",
+      "arguments": {
+        "title": "Audit note",
+        "content": "# Audit note\n\n## One\n\nBody text.",
+        "template": "plain"
+      },
+      "note": "The same render with output_path omitted, so the server picks HOME/Documents/pdf-it/{title}-{timestamp}.pdf. The timestamp has one-second resolution."
+    }
+  ]
+}

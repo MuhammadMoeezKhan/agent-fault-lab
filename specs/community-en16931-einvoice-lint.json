@@ -1,0 +1,69 @@
+{
+  "server": {
+    "name": "community-en16931-einvoice-lint",
+    "command": [
+      "npx",
+      "-y",
+      "@readystack/en16931-einvoice-lint",
+      "--mcp"
+    ],
+    "container_command": [
+      "en16931-einvoice-lint",
+      "--mcp"
+    ],
+    "version": "@readystack/en16931-einvoice-lint (npm latest at image build time)",
+    "note": "Drawn in frame order at position 522 of Frame 3, block 5. Three tools, none annotated. check_file and check_text are free; check_dir requires a licence this study does not buy, so its rows record the refusal rather than a sweep.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "invoices"
+      ],
+      "files": {
+        "invoices/inv-1.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\" xmlns:cbc=\"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\"><cbc:ID>INV-1</cbc:ID><cbc:IssueDate>2026-01-01</cbc:IssueDate><cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode></Invoice>\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n4"
+  },
+  "fixtures": [
+    {
+      "tool": "check_file",
+      "id": "check_one_file",
+      "arguments": {
+        "path": "{root}/invoices/inv-1.xml"
+      },
+      "note": "The free single-file check, against a seeded UBL invoice."
+    },
+    {
+      "tool": "check_text",
+      "id": "check_text_with_a_path",
+      "arguments": {
+        "path": "{root}/invoices/inv-1.xml",
+        "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\" xmlns:cbc=\"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\"><cbc:ID>INV-1</cbc:ID><cbc:IssueDate>2026-01-01</cbc:IssueDate><cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode></Invoice>\n"
+      },
+      "note": "The free text check. The schema also takes a path, so the call carries one in case the tool writes alongside it."
+    },
+    {
+      "tool": "check_dir",
+      "id": "check_the_folder",
+      "arguments": {
+        "dir": "{root}/invoices",
+        "ext": "xml"
+      },
+      "note": "The licensed sweep, called without a licence. What the server does at that boundary is the measurement; nothing is purchased."
+    }
+  ]
+}
