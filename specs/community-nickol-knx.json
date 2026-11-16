@@ -1,0 +1,93 @@
+{
+  "server": {
+    "name": "community-nickol-knx",
+    "command": [
+      "npx",
+      "-y",
+      "nickol-knx-mcp"
+    ],
+    "container_command": [
+      "nickol-knx-mcp"
+    ],
+    "version": "nickol-knx-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 576 of Frame 3, block 5. Thirty two tools, none annotated. The server writes only inside <working directory>/knx-workspace and never opens a bus connection, per workspace_info. A project is loaded from a seeded ETS group-address export (ga-export/01) by a server prelude, since the loaded project is cached for the session; load_ga_export is not under test. Generated .knxproj archives are observed by entry.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "prelude": [
+      [
+        "load_ga_export",
+        {
+          "path": "{root}/ga.xml"
+        }
+      ]
+    ],
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "*.knxproj"
+          ]
+        },
+        {
+          "kind": "zip-doc",
+          "path": "",
+          "patterns": [
+            "*.knxproj"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "ga.xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<GroupAddress-Export xmlns=\"http://knx.org/xml/ga-export/01\">\n  <GroupRange Name=\"Lighting\" RangeStart=\"0\" RangeEnd=\"2047\">\n    <GroupRange Name=\"Switch\" RangeStart=\"1\" RangeEnd=\"255\">\n      <GroupAddress Name=\"Kitchen light switch\" Address=\"0/0/1\" DPTs=\"DPST-1-1\" />\n      <GroupAddress Name=\"Kitchen light status\" Address=\"0/0/2\" DPTs=\"DPST-1-1\" />\n    </GroupRange>\n  </GroupRange>\n</GroupAddress-Export>\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n7"
+  },
+  "fixtures": [
+    {
+      "tool": "generate_ha_package",
+      "id": "ha_package_to_file",
+      "arguments": {
+        "output_path": "ha.yaml"
+      },
+      "note": "Writes a Home Assistant package YAML into the workspace."
+    },
+    {
+      "tool": "project_report",
+      "id": "report_to_file",
+      "arguments": {
+        "output_path": "report.md"
+      },
+      "note": "Writes the Markdown project report into the workspace."
+    },
+    {
+      "tool": "compose_rooms",
+      "id": "compose_one_room",
+      "arguments": {
+        "rooms": [
+          {
+            "template": "bedroom",
+            "preset": "basic"
+          }
+        ],
+        "dry_run": false,
+        "output_dir": "house",
+        "language": "en"
+      },
+      "note": "Builds a new project from one room template with dry_run off, writing a .knxproj, GA exports, a manifest and a bill of materials into one output directory. The rooms list is the F5 shape."
+    }
+  ]
+}

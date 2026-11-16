@@ -1,0 +1,230 @@
+{
+  "server": {
+    "name": "community-stillos-edge-gate",
+    "command": [
+      "npx",
+      "-y",
+      "stillos-edge-gate",
+      "mcp"
+    ],
+    "container_command": [
+      "stillos-edge-gate",
+      "mcp"
+    ],
+    "version": "stillos-edge-gate (npm latest at image build time)",
+    "note": "Drawn in frame order at position 594 of Frame 3, block 5. One tool, not annotated, grading a track record passed in the call. HOME is observed, since there is no path argument. The description promises a signed receipt when a receipt service is reachable; under the profile it is not.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "watched.txt": "present\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n8"
+  },
+  "fixtures": [
+    {
+      "tool": "grade_strategy",
+      "id": "grade_a_track_record",
+      "arguments": {
+        "agent": "audit-agent",
+        "trades": [
+          {
+            "t": "2026-01-01",
+            "price": 0.4,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-02",
+            "price": 0.41,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-03",
+            "price": 0.42,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-04",
+            "price": 0.43,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-05",
+            "price": 0.44,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-06",
+            "price": 0.45,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-07",
+            "price": 0.46,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-08",
+            "price": 0.47,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-09",
+            "price": 0.48,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-10",
+            "price": 0.49,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-11",
+            "price": 0.4,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-12",
+            "price": 0.41,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-13",
+            "price": 0.42,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-14",
+            "price": 0.43,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-15",
+            "price": 0.44,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-16",
+            "price": 0.45,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-17",
+            "price": 0.46,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-18",
+            "price": 0.47,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-19",
+            "price": 0.48,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-20",
+            "price": 0.49,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-21",
+            "price": 0.4,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-22",
+            "price": 0.41,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-23",
+            "price": 0.42,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-24",
+            "price": 0.43,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-25",
+            "price": 0.44,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-26",
+            "price": 0.45,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-27",
+            "price": 0.46,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-28",
+            "price": 0.47,
+            "side": "yes",
+            "outcome": 0
+          },
+          {
+            "t": "2026-01-29",
+            "price": 0.48,
+            "side": "yes",
+            "outcome": 1
+          },
+          {
+            "t": "2026-01-30",
+            "price": 0.49,
+            "side": "yes",
+            "outcome": 1
+          }
+        ]
+      },
+      "note": "Grades thirty seeded settled trades in the documented shape (price, outcome, side, t)."
+    }
+  ]
+}

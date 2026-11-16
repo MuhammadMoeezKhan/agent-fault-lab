@@ -1,0 +1,60 @@
+{
+  "server": {
+    "name": "community-mcp-await",
+    "command": [
+      "npx",
+      "-y",
+      "mcp-await"
+    ],
+    "container_command": [
+      "mcp-await"
+    ],
+    "version": "mcp-await (npm latest at image build time)",
+    "note": "Drawn in frame order at position 593 of Frame 3, block 5. Eight tools, none annotated; each waits for a condition. Two are exercised: a file watch on a seeded file and a command watch on a command that writes nothing, so any state change is the server's own. HOME is observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "watched.txt": "present\n"
+      }
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n8"
+  },
+  "fixtures": [
+    {
+      "tool": "wait_for_file",
+      "id": "wait_for_existing_file",
+      "arguments": {
+        "path": "{root}/watched.txt",
+        "event": "create",
+        "blocking": true,
+        "timeout_seconds": 3
+      },
+      "note": "A blocking watch on a file that already exists."
+    },
+    {
+      "tool": "wait_for_command",
+      "id": "wait_for_true",
+      "arguments": {
+        "command": "true",
+        "blocking": true,
+        "timeout_seconds": 5,
+        "interval_seconds": 1
+      },
+      "note": "A blocking watch on a command that exits 0 at once and writes nothing."
+    }
+  ]
+}

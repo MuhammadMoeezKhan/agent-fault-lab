@@ -1,0 +1,62 @@
+{
+  "server": {
+    "name": "community-consolelog",
+    "command": [
+      "npx",
+      "-y",
+      "consolelog-mcp"
+    ],
+    "container_command": [
+      "consolelog-mcp"
+    ],
+    "version": "consolelog-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 562 of Frame 3, block 5. Twenty seven tools, none annotated and none taking a path, file or directory argument. Three are exercised as representatives: a hash, a random generator and a formatter. HOME is observed here, unlike most specs, because it is the only place a tool without a path argument could leave state.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n6"
+  },
+  "fixtures": [
+    {
+      "tool": "hash",
+      "id": "hash_a_string",
+      "arguments": {
+        "text": "abc",
+        "algorithm": "SHA-256"
+      },
+      "note": "A pure function of its arguments."
+    },
+    {
+      "tool": "uuid",
+      "id": "generate_two_uuids",
+      "arguments": {
+        "count": 2
+      },
+      "note": "Random output; measured for whether anything is recorded."
+    },
+    {
+      "tool": "json_format",
+      "id": "format_json",
+      "arguments": {
+        "json": "{\"b\":1,\"a\":2}",
+        "indent": 2,
+        "sort_keys": true
+      },
+      "note": "A pure function of its arguments."
+    }
+  ]
+}

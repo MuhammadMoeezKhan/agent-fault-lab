@@ -1,0 +1,161 @@
+{
+  "server": {
+    "name": "community-letin",
+    "command": [
+      "npx",
+      "-y",
+      "letin"
+    ],
+    "container_command": [
+      "letin"
+    ],
+    "version": "letin (npm latest at image build time)",
+    "note": "Drawn in frame order at position 585 of Frame 3, block 5. Thirty one tools; the mutating ones edit Power Query M in a source. Excel and Power BI Desktop sources need Windows, so every fixture uses the documented folder-of-.pq-files source, seeded in the trial root. The automatic pre-write snapshots go under HOME and are not observed. pq-manifest.json is observed as a JSON document with its updated_at stamp declared away; the .pq files are observed by bytes.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "pq/pq-manifest.json"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": "pq",
+          "name": "pq-manifest",
+          "patterns": [
+            "pq-manifest.json"
+          ],
+          "drop_keys": [
+            "updated_at"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "pq/Base.pq": "let\n    Source = #table({\"Total\"}, {{1}})\nin\n    Source\n",
+        "pq/Old.pq": "let\n    Source = 0\nin\n    Source\n"
+      }
+    },
+    "timeout_s": 150.0,
+    "image": "agent-fault-lab:block5-n7"
+  },
+  "fixtures": [
+    {
+      "tool": "set_query",
+      "id": "set_query_create_if_missing",
+      "arguments": {
+        "source": "{root}/pq",
+        "name": "Extra",
+        "formula": "let Source = 2 in Source",
+        "create_if_missing": true,
+        "dry_run": false
+      },
+      "probes": [
+        [
+          "list_queries",
+          {
+            "source": "{root}/pq"
+          }
+        ]
+      ],
+      "note": "Creates a query by name, or replaces it if it exists. probe_stable is set: the read tool's reply carries the source location, query names, M text and step lists only, checked against its actual output.",
+      "probe_stable": true
+    },
+    {
+      "tool": "apply_transform",
+      "id": "append_a_step",
+      "arguments": {
+        "source": "{root}/pq",
+        "query": "Base",
+        "action": "remove_blank_rows",
+        "params": {},
+        "dry_run": false
+      },
+      "probes": [
+        [
+          "get_query",
+          {
+            "source": "{root}/pq",
+            "name": "Base"
+          }
+        ]
+      ],
+      "note": "Appends a guided step to the end of the query. probe_stable is set: the read tool's reply carries the source location, query names, M text and step lists only, checked against its actual output.",
+      "probe_stable": true
+    },
+    {
+      "tool": "replace_in_queries",
+      "id": "replace_text_containing_its_target",
+      "arguments": {
+        "source": "{root}/pq",
+        "find": "Total",
+        "replace": "Totals",
+        "dry_run": false
+      },
+      "probes": [
+        [
+          "get_query",
+          {
+            "source": "{root}/pq",
+            "name": "Base"
+          }
+        ]
+      ],
+      "note": "A literal find and replace whose replacement contains the search text. probe_stable is set: the read tool's reply carries the source location, query names, M text and step lists only, checked against its actual output.",
+      "probe_stable": true
+    },
+    {
+      "tool": "rename_query",
+      "id": "rename_a_query",
+      "arguments": {
+        "source": "{root}/pq",
+        "old_name": "Old",
+        "new_name": "Older",
+        "dry_run": false
+      },
+      "probes": [
+        [
+          "list_queries",
+          {
+            "source": "{root}/pq"
+          }
+        ]
+      ],
+      "note": "Renames a seeded query and rewrites references to it. probe_stable is set: the read tool's reply carries the source location, query names, M text and step lists only, checked against its actual output.",
+      "probe_stable": true
+    },
+    {
+      "tool": "delete_query",
+      "id": "delete_a_query",
+      "arguments": {
+        "source": "{root}/pq",
+        "name": "Old",
+        "dry_run": false
+      },
+      "probes": [
+        [
+          "list_queries",
+          {
+            "source": "{root}/pq"
+          }
+        ]
+      ],
+      "note": "Deletes a seeded query that nothing references. probe_stable is set: the read tool's reply carries the source location, query names, M text and step lists only, checked against its actual output.",
+      "probe_stable": true
+    }
+  ]
+}

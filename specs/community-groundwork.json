@@ -1,0 +1,84 @@
+{
+  "server": {
+    "name": "community-groundwork",
+    "command": [
+      "npx",
+      "-y",
+      "@pharmatools/groundwork",
+      "mcp"
+    ],
+    "container_command": [
+      "groundwork",
+      "mcp"
+    ],
+    "version": "@pharmatools/groundwork (npm latest at image build time)",
+    "note": "Drawn in frame order at position 598 of Frame 3, block 5. Five tools, none annotated. Two of them write into a repository directory, seeded empty in the trial root: scaffold_harness runs `groundwork init`, and check_readiness runs `groundwork check` against the scaffolded harness. The two check tools that take answers and records in the call are not exercised. Each check writes one results file under groundwork/results named by the millisecond it ran; two clean runs differed in that name and in the file's top-level timestamp and nowhere else, so that directory is observed as a tally with timestamp declared away.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "repo/groundwork/results",
+            "repo/groundwork/results/*"
+          ]
+        },
+        {
+          "kind": "tally",
+          "path": "repo/groundwork/results",
+          "name": "check-results",
+          "patterns": [
+            "*.json"
+          ],
+          "drop_keys": [
+            "timestamp"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "repo"
+      ]
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:block5-n8"
+  },
+  "fixtures": [
+    {
+      "tool": "scaffold_harness",
+      "id": "scaffold_document_qa",
+      "arguments": {
+        "archetype": "document-qa",
+        "dir": "{root}/repo"
+      },
+      "note": "Scaffolds the document-qa harness into an empty repository directory."
+    },
+    {
+      "tool": "check_readiness",
+      "id": "check_scaffolded_repo",
+      "arguments": {
+        "dir": "{root}/repo"
+      },
+      "prelude": [
+        [
+          "scaffold_harness",
+          {
+            "archetype": "document-qa",
+            "dir": "{root}/repo"
+          }
+        ]
+      ],
+      "note": "Runs the readiness check on a freshly scaffolded harness. The fixture prelude scaffolds it; it calls a different tool and takes no fault."
+    }
+  ]
+}

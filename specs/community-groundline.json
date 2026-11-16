@@ -1,0 +1,105 @@
+{
+  "server": {
+    "name": "community-groundline",
+    "command": [
+      "npx",
+      "-y",
+      "groundline",
+      "mcp"
+    ],
+    "container_command": [
+      "groundline",
+      "mcp"
+    ],
+    "version": "groundline (npm latest at image build time)",
+    "note": "Drawn in frame order at position 600 of Frame 3, block 5. Five tools, none annotated. A run is loaded from a seeded 100-sample CSV with one chamber-pressure channel (Pc) shaped as a single firing pulse, since the report generator segments on a pressure channel by a fixture prelude, which captures the run_id the fixtures then use; open_run is not under test. HOME is excluded because the plotting library writes its font cache there. write_html_report writes report.html and report.json together. report.json is observed as a JSON document with created_at and elapsed_s declared away; report.html is a rendering of the same data with a minute-resolution generation stamp, and is not observed.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store",
+            "out/report.html",
+            "out/report.json"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": "out",
+          "name": "report-json",
+          "patterns": [
+            "report.json"
+          ],
+          "drop_keys": [
+            "created_at",
+            "elapsed_s"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "out"
+      ],
+      "files": {
+        "run/run.csv": "t,Pc\n0.0,0.0\n0.1,0.0\n0.2,0.0\n0.3,0.0\n0.4,0.0\n0.5,0.0\n0.6,0.0\n0.7,0.0\n0.8,0.0\n0.9,0.0\n1.0,20.0\n1.1,20.0\n1.2,20.0\n1.3,20.0\n1.4,20.0\n1.5,20.0\n1.6,20.0\n1.7,20.0\n1.8,20.0\n1.9,20.0\n2.0,20.0\n2.1,20.0\n2.2,20.0\n2.3,20.0\n2.4,20.0\n2.5,20.0\n2.6,20.0\n2.7,20.0\n2.8,20.0\n2.9,20.0\n3.0,20.0\n3.1,20.0\n3.2,20.0\n3.3,20.0\n3.4,20.0\n3.5,20.0\n3.6,20.0\n3.7,20.0\n3.8,20.0\n3.9,20.0\n4.0,20.0\n4.1,20.0\n4.2,20.0\n4.3,20.0\n4.4,20.0\n4.5,20.0\n4.6,20.0\n4.7,20.0\n4.8,20.0\n4.9,20.0\n5.0,20.0\n5.1,20.0\n5.2,20.0\n5.3,20.0\n5.4,20.0\n5.5,20.0\n5.6,20.0\n5.7,20.0\n5.8,20.0\n5.9,20.0\n6.0,20.0\n6.1,20.0\n6.2,20.0\n6.3,20.0\n6.4,20.0\n6.5,20.0\n6.6,20.0\n6.7,20.0\n6.8,20.0\n6.9,20.0\n7.0,20.0\n7.1,20.0\n7.2,20.0\n7.3,20.0\n7.4,20.0\n7.5,20.0\n7.6,20.0\n7.7,20.0\n7.8,20.0\n7.9,20.0\n8.0,0.0\n8.1,0.0\n8.2,0.0\n8.3,0.0\n8.4,0.0\n8.5,0.0\n8.6,0.0\n8.7,0.0\n8.8,0.0\n8.9,0.0\n9.0,0.0\n9.1,0.0\n9.2,0.0\n9.3,0.0\n9.4,0.0\n9.5,0.0\n9.6,0.0\n9.7,0.0\n9.8,0.0\n9.9,0.0\n"
+      }
+    },
+    "timeout_s": 180.0,
+    "image": "agent-fault-lab:block5-n8"
+  },
+  "fixtures": [
+    {
+      "tool": "run_analysis",
+      "id": "describe_data",
+      "arguments": {
+        "tool": "describe_data",
+        "params": {},
+        "run_id": "{run}"
+      },
+      "prelude": [
+        [
+          "open_run",
+          {
+            "run_path": "{root}/run/run.csv"
+          },
+          {
+            "run": "run_id"
+          }
+        ]
+      ],
+      "note": "One analysis call, which the description says is stored in the evidence ledger."
+    },
+    {
+      "tool": "write_html_report",
+      "id": "write_report",
+      "arguments": {
+        "findings": [],
+        "summary": "Audit fixture run.",
+        "out_path": "{root}/out/report.html",
+        "run_id": "{run}"
+      },
+      "prelude": [
+        [
+          "open_run",
+          {
+            "run_path": "{root}/run/run.csv"
+          },
+          {
+            "run": "run_id"
+          }
+        ]
+      ],
+      "note": "Writes the HTML report and report.json to a caller-named path, with an empty findings list."
+    }
+  ]
+}

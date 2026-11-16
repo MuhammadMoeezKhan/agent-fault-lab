@@ -1,0 +1,51 @@
+{
+  "server": {
+    "name": "community-nace",
+    "command": [
+      "npx",
+      "-y",
+      "nace-mcp"
+    ],
+    "container_command": [
+      "nace-mcp"
+    ],
+    "version": "nace-mcp (npm latest at image build time)",
+    "note": "Drawn in frame order at position 582 of Frame 3, block 5. Four tools, none annotated, all lookups against bundled NACE Rev. 2.1 data with no path argument. Two are exercised as representatives. HOME is observed, since it is the only place a tool without a path argument could leave state.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n7"
+  },
+  "fixtures": [
+    {
+      "tool": "nace_get",
+      "id": "get_one_code",
+      "arguments": {
+        "code": "58.1"
+      },
+      "note": "A single-code lookup."
+    },
+    {
+      "tool": "nace_suggest",
+      "id": "suggest_codes",
+      "arguments": {
+        "activity_description": "writing custom software for clients"
+      },
+      "note": "A fuzzy match over the bundled labels."
+    }
+  ]
+}

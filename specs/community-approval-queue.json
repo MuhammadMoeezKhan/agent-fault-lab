@@ -1,0 +1,79 @@
+{
+  "server": {
+    "name": "community-approval-queue",
+    "command": [
+      "npx",
+      "-y",
+      "@opafex/mcp-approval-queue"
+    ],
+    "container_command": [
+      "mcp-approval-queue"
+    ],
+    "version": "@opafex/mcp-approval-queue (npm latest at image build time)",
+    "note": "Drawn in frame order at position 553 of Frame 3, block 5. Five tools, none annotated; request_approval is the only one that writes. The queue lives in HOME/.opafex/approval-queue/state.json, observed as a JSON document with the generated id and the requestedAt and expiresAt stamps declared away; list lengths are kept. request_approval is called with wait false: with wait true it blocks until a human decides through the CLI, which no trial can do.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "filesystem",
+          "path": "",
+          "ignore": [
+            "home",
+            "home/*",
+            ".DS_Store"
+          ]
+        },
+        {
+          "kind": "json-doc",
+          "path": "home/.opafex/approval-queue",
+          "name": "approval-state",
+          "patterns": [
+            "state.json"
+          ],
+          "drop_keys": [
+            "id",
+            "requestedAt",
+            "expiresAt"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 120.0,
+    "image": "agent-fault-lab:block5-n6"
+  },
+  "fixtures": [
+    {
+      "tool": "request_approval",
+      "id": "request_one_approval",
+      "arguments": {
+        "action": "delete_staging_database",
+        "category": "database",
+        "params": {
+          "database": "staging"
+        },
+        "wait": false
+      },
+      "probes": [
+        [
+          "list_pending",
+          {}
+        ]
+      ],
+      "probe_drop_keys": [
+        "id",
+        "requestedAt",
+        "expiresAt"
+      ],
+      "note": "Files one approval request without waiting for a decision. list_pending reads the queue back as JSON; its generated id and time stamps are declared away."
+    }
+  ]
+}
