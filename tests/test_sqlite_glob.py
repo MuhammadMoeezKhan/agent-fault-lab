@@ -65,6 +65,53 @@ def test_a_store_appearing_later_is_picked_up_by_the_same_observer(tmp_path):
     assert observer.snapshot().get("__present__") is not False
 
 
+def _store(path, rows):
+    connection = sqlite3.connect(path)
+    connection.execute("create table messages (id text, text text)")
+    connection.executemany("insert into messages values (?, ?)", rows)
+    connection.commit()
+    connection.close()
+
+
+def test_unnamed_mode_reads_every_match_and_ignores_the_names(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _store(tmp_path / "a" / "x1.sqlite", [("1", "hello")])
+    _store(tmp_path / "a" / "x2.sqlite", [("1", "bye")])
+    _store(tmp_path / "b" / "zz.sqlite", [("1", "bye")])
+    _store(tmp_path / "b" / "yy.sqlite", [("1", "hello")])
+    first = SqliteObserver(str(tmp_path / "a" / "*.sqlite"), unnamed=True).snapshot()
+    second = SqliteObserver(str(tmp_path / "b" / "*.sqlite"), unnamed=True).snapshot()
+    assert first == second
+    assert len(first["__unnamed__"]) == 2
+
+
+def test_unnamed_mode_sees_a_second_store_as_a_different_state(tmp_path):
+    _store(tmp_path / "one.sqlite", [("1", "hello")])
+    observer = SqliteObserver(str(tmp_path / "*.sqlite"), unnamed=True)
+    once = observer.snapshot()
+    _store(tmp_path / "two.sqlite", [("1", "hello")])
+    assert observer.snapshot() != once
+
+
+def test_unnamed_mode_with_no_match_is_absent(tmp_path):
+    observer = SqliteObserver(str(tmp_path / "*.sqlite"), unnamed=True)
+    assert observer.snapshot() == {"__present__": False}
+
+
+def test_a_spec_can_ask_for_unnamed_mode(tmp_path):
+    from agentfaultlab.spec import load
+
+    spec = tmp_path / "spec.json"
+    spec.write_text(
+        '{"server": {"name": "x", "command": ["true"], "observer": '
+        '{"kind": "sqlite", "path": "p/*.sqlite", "unnamed": true}},'
+        ' "fixtures": [{"tool": "t", "arguments": {}}]}'
+    )
+    target, _ = load(str(spec))
+    assert target.observer(str(tmp_path)).unnamed is True
+
+
 def test_the_test_file_writes_no_em_dashes():
     with open(__file__) as handle:
         assert "\u2014" not in handle.read()

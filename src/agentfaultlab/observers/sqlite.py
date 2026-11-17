@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import json
 import os
 import sqlite3
 from typing import Any, Iterable, Optional
@@ -48,8 +49,17 @@ class SqliteObserver:
         tables: Optional[Iterable[str]] = None,
         ignore_columns: Optional[Iterable[str]] = None,
         max_rows: int = 20000,
+        unnamed: bool = False,
     ) -> None:
         self.path = os.path.abspath(path)
+        #: Read every database the glob matches and compare them as an
+        #: unnamed collection, instead of refusing more than one. For servers
+        #: that keep one store per object under a generated name (a channel
+        #: file named by a random id): the name differs on every trial and
+        #: carries no effect, and creating a second store is exactly the
+        #: duplicate the audit has to see. Off by default, so a glob that
+        #: was meant to find one store still refuses ambiguity.
+        self.unnamed = unnamed
         self.name = name
         self.include_schema = include_schema
         self.tables = tuple(tables) if tables else None
@@ -86,6 +96,37 @@ class SqliteObserver:
         return lowered in self.ignore_columns or qualified in self.ignore_columns
 
     def snapshot(self) -> Snapshot:
+        if self.unnamed:
+            return self._snapshot_unnamed()
+        return self._snapshot_one()
+
+    def _snapshot_unnamed(self) -> Snapshot:
+        """Every matching store, contents only, sorted; names never compared."""
+        matches = sorted(glob.glob(self.path))
+        if not matches:
+            return {"__present__": False}
+        stores = [self._snapshot_path(match) for match in matches]
+        return {
+            "__present__": True,
+            "__unnamed__": sorted(
+                stores, key=lambda store: json.dumps(store, sort_keys=True, default=str)
+            ),
+        }
+
+    def _snapshot_path(self, resolved: str) -> Snapshot:
+        uri = f"file:{resolved}?mode=ro"
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=5)
+        except sqlite3.Error as exc:
+            return {"__present__": True, "__error__": str(exc)}
+        try:
+            return self._read(connection)
+        except sqlite3.Error as exc:
+            return {"__present__": True, "__error__": str(exc)}
+        finally:
+            connection.close()
+
+    def _snapshot_one(self) -> Snapshot:
         self._ambiguous: list[str] = []
         resolved = self.resolve()
         if resolved is None:
@@ -98,17 +139,7 @@ class SqliteObserver:
                     "__ambiguous__": [os.path.basename(m) for m in self._ambiguous],
                 }
             return {"__present__": False}
-        uri = f"file:{resolved}?mode=ro"
-        try:
-            connection = sqlite3.connect(uri, uri=True, timeout=5)
-        except sqlite3.Error as exc:
-            return {"__present__": True, "__error__": str(exc)}
-        try:
-            return self._read(connection)
-        except sqlite3.Error as exc:
-            return {"__present__": True, "__error__": str(exc)}
-        finally:
-            connection.close()
+        return self._snapshot_path(resolved)
 
     def _read(self, connection: sqlite3.Connection) -> Snapshot:
         state: Snapshot = {"__present__": True}

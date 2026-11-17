@@ -89,6 +89,7 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             name=config.get("name", "sqlite"),
             tables=tuple(tables) if tables else None,
             ignore_columns=tuple(config.get("ignore_columns") or ()),
+            unnamed=bool(config.get("unnamed", False)),
         )
     if kind == "tally":
         # Names are never compared, so a spec using this is saying the files
