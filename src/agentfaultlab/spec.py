@@ -31,6 +31,8 @@ accepts (a module exposing `TARGET` and `FIXTURES`).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import sqlite3
@@ -125,6 +127,7 @@ def _observer_factory(config: dict[str, Any]) -> Callable[[str], Any]:
             patterns=tuple(config.get("patterns") or ("*.json",)),
             drop_keys=tuple(config.get("drop_keys") or ()),
             name=config.get("name", "json-doc"),
+            unkeyed=bool(config.get("unkeyed", False)),
         )
     if kind == "zip-doc":
         # Same contract as json-doc and append-log: the archives are named by
@@ -171,6 +174,18 @@ def _setup_factory(config: Optional[dict[str, Any]]) -> Optional[Callable[[str],
             os.makedirs(os.path.dirname(path) or root, exist_ok=True)
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(content)
+        # Base64, for seeds that are not text (an image a tool is asked to
+        # process). Kept apart from `files` so a text seed is never decoded by
+        # accident and a binary one is never written as mangled UTF-8.
+        for relative, encoded in (config.get("binary_files") or {}).items():
+            path = os.path.join(root, relative)
+            os.makedirs(os.path.dirname(path) or root, exist_ok=True)
+            try:
+                data = base64.b64decode(encoded, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise SpecError(f"setup.binary_files[{relative!r}] is not base64: {exc}") from exc
+            with open(path, "wb") as handle:
+                handle.write(data)
         for relative in config.get("directories") or []:
             os.makedirs(os.path.join(root, relative), exist_ok=True)
         git = config.get("git")

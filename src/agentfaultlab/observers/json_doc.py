@@ -84,8 +84,16 @@ class JsonDocObserver:
         drop_keys: Iterable[str] = (),
         name: str = "json-doc",
         max_bytes: int = 8 * 1024 * 1024,
+        unkeyed: bool = False,
     ) -> None:
         self.root = os.path.abspath(root)
+        #: Compare a document whose top level is a mapping as the sorted list
+        #: of its values, so the keys are never compared. For stores keyed by
+        #: a generated id (an alert saved under "alert_<hex>"): the key differs
+        #: on every trial and carries no effect, while a second entry under a
+        #: second key is exactly the duplicate to catch. Declared per spec,
+        #: like a dropped key, and recorded in the snapshot.
+        self.unkeyed = unkeyed
         self.patterns = tuple(patterns)
         drops = tuple(drop_keys)
         self.drop_keys = tuple(drops)
@@ -130,9 +138,14 @@ class JsonDocObserver:
                 "content": hashlib.sha256(raw).hexdigest()[:16],
             }
         stripped = _strip(document, self.names, self.paths)
+        if self.unkeyed and isinstance(stripped, dict):
+            stripped = sorted(
+                (json.dumps(value, sort_keys=True, separators=(",", ":")) for value in stripped.values())
+            )
         payload = json.dumps(stripped, sort_keys=True, separators=(",", ":"))
         return {
             "mode": "projected" if self.drop_keys else "verbatim",
             "dropped": sorted(self.drop_keys),
+            **({"unkeyed": True} if self.unkeyed else {}),
             "content": hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16],
         }

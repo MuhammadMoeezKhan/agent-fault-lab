@@ -191,3 +191,40 @@ def test_no_em_dashes_in_the_module():
     import agentfaultlab.observers.json_doc as module
 
     assert "—" not in open(module.__file__, encoding="utf-8").read()
+
+
+# ---------------------------------------------------------------- unkeyed
+
+def _alerts(path, entries):
+    path.write_text(json.dumps({key: {"id": key, "name": name} for key, name in entries}))
+
+
+def test_unkeyed_ignores_generated_top_level_keys(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _alerts(tmp_path / "a" / "alerts.json", [("alert_01", "x")])
+    _alerts(tmp_path / "b" / "alerts.json", [("alert_99", "x")])
+    first = JsonDocObserver(str(tmp_path / "a"), drop_keys=("id",), unkeyed=True).snapshot()
+    second = JsonDocObserver(str(tmp_path / "b"), drop_keys=("id",), unkeyed=True).snapshot()
+    assert first == second
+    assert first["alerts.json"]["unkeyed"] is True
+
+
+def test_unkeyed_still_sees_a_second_entry(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _alerts(tmp_path / "a" / "alerts.json", [("alert_01", "x")])
+    _alerts(tmp_path / "b" / "alerts.json", [("alert_01", "x"), ("alert_02", "x")])
+    first = JsonDocObserver(str(tmp_path / "a"), drop_keys=("id",), unkeyed=True).snapshot()
+    second = JsonDocObserver(str(tmp_path / "b"), drop_keys=("id",), unkeyed=True).snapshot()
+    assert first != second
+
+
+def test_keyed_comparison_is_the_default(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _alerts(tmp_path / "a" / "alerts.json", [("alert_01", "x")])
+    _alerts(tmp_path / "b" / "alerts.json", [("alert_99", "x")])
+    first = JsonDocObserver(str(tmp_path / "a"), drop_keys=("id",)).snapshot()
+    second = JsonDocObserver(str(tmp_path / "b"), drop_keys=("id",)).snapshot()
+    assert first != second
