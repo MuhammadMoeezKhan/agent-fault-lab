@@ -1,0 +1,123 @@
+{
+  "server": {
+    "name": "community-news-monitor",
+    "command": [
+      "uvx",
+      "news-monitor-mcp"
+    ],
+    "container_command": [
+      "news-monitor-mcp"
+    ],
+    "version": "news-monitor-mcp 0.4.0 (PyPI latest at image build time)",
+    "note": "Drawn in frame order at position 694 of Frame 3. Fifteen tools, all annotated. Alerts are kept in one JSON document keyed by a generated alert id, so that document is compared unkeyed with the id and creation time dropped; the lock file beside it is excluded. Every search and alert check calls a remote news API that needs a key, so only the local alert and cache tools are exercised.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "json-doc",
+          "name": "alerts",
+          "path": "home/.news-monitor-mcp",
+          "patterns": [
+            "alerts.json"
+          ],
+          "drop_keys": [
+            "id",
+            "created_at"
+          ],
+          "unkeyed": true
+        },
+        {
+          "kind": "filesystem",
+          "name": "files",
+          "path": "",
+          "ignore": [
+            "home/.news-monitor-mcp/alerts.json",
+            "home/.news-monitor-mcp/alerts.json.lock",
+            ".DS_Store"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 60.0,
+    "image": "agent-fault-lab:block6-n5"
+  },
+  "fixtures": [
+    {
+      "tool": "news_alert_create",
+      "id": "create_keyword_alert",
+      "arguments": {
+        "params": {
+          "name": "audit alert",
+          "entity": "Beispiel AG",
+          "condition_type": "keyword_found",
+          "keyword": "Test"
+        }
+      },
+      "probes": [
+        [
+          "news_alert_list",
+          {}
+        ]
+      ],
+      "note": "One keyword alert."
+    },
+    {
+      "tool": "news_alert_delete",
+      "id": "delete_alert",
+      "arguments": {
+        "params": {
+          "alert_id": "{alert}",
+          "confirm": true
+        }
+      },
+      "prelude": [
+        [
+          "news_alert_create",
+          {
+            "params": {
+              "name": "audit alert",
+              "entity": "Beispiel AG",
+              "condition_type": "keyword_found",
+              "keyword": "Test"
+            }
+          },
+          {
+            "alert": "re:`(alert_[0-9a-f]+)`"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "news_alert_list",
+          {}
+        ]
+      ],
+      "note": "The alert is created in the prelude and its id read from the reply text by pattern."
+    },
+    {
+      "tool": "news_cache_clear",
+      "id": "clear_all",
+      "arguments": {
+        "params": {
+          "confirm": true
+        }
+      },
+      "probes": [
+        [
+          "news_cache_stats",
+          {}
+        ]
+      ],
+      "note": "Clears the whole cache."
+    }
+  ]
+}

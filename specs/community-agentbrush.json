@@ -1,0 +1,102 @@
+{
+  "server": {
+    "name": "community-agentbrush",
+    "command": [
+      "npx",
+      "-y",
+      "@agentbrush/mcp-server"
+    ],
+    "container_command": [
+      "agentbrush-mcp"
+    ],
+    "version": "@agentbrush/mcp-server (npm latest at image build time; serverInfo reports agentbrush 0.0.1)",
+    "note": "Drawn in frame order at position 455 of Frame 3; re-entered under amendment 9.8. Twelve tools, none annotated. Generation and editing need an account and the network; only the three tools that work locally are exercised (project init, saving a reference image, background removal). save_as_reference has no project argument and writes under the working directory, which is the trial root. The brand identity documents carry creation and update times, which are dropped.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "json-doc",
+          "name": "identity",
+          "path": "",
+          "patterns": [
+            "identity.json"
+          ],
+          "drop_keys": [
+            "created_at",
+            "updated_at"
+          ]
+        },
+        {
+          "kind": "filesystem",
+          "name": "files",
+          "path": "",
+          "ignore": [
+            "data/.agentbrush/identity.json",
+            ".agentbrush/identity.json",
+            ".DS_Store"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "data"
+      ],
+      "binary_files": {
+        "img/red.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGP4z8DwHx9mGBkKAMLXf4EvceABAAAAAElFTkSuQmCC"
+      }
+    },
+    "timeout_s": 60.0,
+    "image": "agent-fault-lab:reprobe-bin-n3"
+  },
+  "fixtures": [
+    {
+      "tool": "agentbrush_init",
+      "id": "init_project",
+      "arguments": {
+        "project_dir": "{root}/data",
+        "cli_tool": "claude-code"
+      },
+      "probes": [
+        [
+          "agentbrush_list_references",
+          {}
+        ]
+      ],
+      "note": "Initializes the data directory as a project."
+    },
+    {
+      "tool": "agentbrush_save_as_reference",
+      "id": "save_reference",
+      "arguments": {
+        "image_path": "{root}/img/red.png",
+        "name": "red",
+        "tags": [
+          "test"
+        ],
+        "description": "a red square"
+      },
+      "probes": [
+        [
+          "agentbrush_list_references",
+          {}
+        ]
+      ],
+      "note": "Registers the seeded 8 by 8 PNG as a reference."
+    },
+    {
+      "tool": "agentbrush_remove_background",
+      "id": "remove_background",
+      "arguments": {
+        "image_path": "{root}/img/red.png",
+        "output_dir": "{root}/out"
+      },
+      "note": "Local background removal of the seeded PNG into out/."
+    }
+  ]
+}
