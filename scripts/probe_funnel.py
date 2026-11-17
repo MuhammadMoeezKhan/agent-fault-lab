@@ -50,6 +50,13 @@ def _text(record: dict) -> str:
 
 def classify(record: dict) -> str:
     attempts = record.get("attempts") or []
+    if "npx_unresolvable" in record:
+        # The package installed, but npx could not choose which of its
+        # executables to run, so the registry's command fails as published.
+        # The prober records that with no attempt (there is nothing it could
+        # honestly launch), which the no-attempt rule below would misread as
+        # an install failure. It is a launch failure.
+        return "did-not-start"
     if not attempts:
         return "not-installed"
     if not record.get("started_via"):
@@ -109,6 +116,8 @@ def failure_cause(record: dict) -> str:
     earlier count: a changed boundary is a changed table here, visible in the
     diff, instead of a number that moved for no recorded reason.
     """
+    if "npx_unresolvable" in record:
+        return "npx cannot choose an executable (published command fails)"
     text = _text(record)
     for needles, title in FAILURE_CAUSES:
         if any(needle in text for needle in needles):

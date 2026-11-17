@@ -124,3 +124,20 @@ def test_rate_carries_an_interval_and_survives_a_zero_denominator():
     funnel = _load()
     assert "95% CI" in funnel.rate(1, 10)
     assert funnel.rate(0, 0) == "n/a (0)"
+
+
+def test_npx_unable_to_choose_an_executable_is_a_launch_failure():
+    # Recorded by the prober with no attempt, because there is nothing it can
+    # honestly launch; the package did install, so this is not an install
+    # failure. Found when the 2026-11-16 re-probe moved 9 candidates into the
+    # wrong row.
+    funnel = _load()
+    record = {
+        "server": "s",
+        "started_via": None,
+        "binary_source": "declared",
+        "npx_unresolvable": None,
+        "attempts": [],
+    }
+    assert funnel.classify(record) == "did-not-start"
+    assert funnel.failure_cause(record).startswith("npx cannot choose")
