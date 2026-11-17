@@ -1,0 +1,165 @@
+{
+  "server": {
+    "name": "community-state-sidecar",
+    "command": [
+      "uvx",
+      "mcp-state-sidecar"
+    ],
+    "container_command": [
+      "mcp-state-sidecar"
+    ],
+    "version": "mcp-state-sidecar 4.2.0 (PyPI latest at image build time)",
+    "note": "Drawn at position 754 of Frame 3, block 7, for the R7-B append-screened subsample (never pooled with the frame-order sample). Nineteen tools, none annotated. One SQLite store in the working directory; generated run ids, timestamps, lease expiry times and the history row id are dropped.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "sqlite",
+      "path": "state_sidecar.db",
+      "ignore_columns": [
+        "run_id",
+        "created_at",
+        "updated_at",
+        "saved_at",
+        "written_at",
+        "expires_at",
+        "history.id"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ]
+    },
+    "timeout_s": 40.0,
+    "image": "agent-fault-lab:block7-n1"
+  },
+  "fixtures": [
+    {
+      "tool": "workflow_create",
+      "id": "create_workflow",
+      "arguments": {
+        "name": "audit",
+        "tags": {
+          "team": "a"
+        }
+      },
+      "probes": [
+        [
+          "workflow_list",
+          {}
+        ]
+      ],
+      "note": "Registers one workflow."
+    },
+    {
+      "tool": "state_set",
+      "id": "set_key",
+      "arguments": {
+        "key": "k",
+        "value": {
+          "a": 1
+        }
+      },
+      "probes": [
+        [
+          "history_log",
+          {
+            "n": 20
+          }
+        ]
+      ],
+      "note": "Sets one key; every set also writes a history row."
+    },
+    {
+      "tool": "session_save",
+      "id": "save_session",
+      "arguments": {
+        "session_id": "s1",
+        "context": {
+          "step": 1
+        }
+      },
+      "probes": [
+        [
+          "session_restore",
+          {
+            "session_id": "s1"
+          }
+        ]
+      ],
+      "note": "Saves one session context by id."
+    },
+    {
+      "tool": "workflow_checkpoint",
+      "id": "checkpoint_step1",
+      "arguments": {
+        "run_id": "{run}",
+        "step": 1,
+        "output": {
+          "rows": 3
+        }
+      },
+      "prelude": [
+        [
+          "workflow_create",
+          {
+            "name": "audit"
+          },
+          {
+            "run": "run_id"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "workflow_resume",
+          {
+            "run_id": "{run}"
+          }
+        ]
+      ],
+      "note": "The workflow is created in the prelude; its run id is captured from the reply."
+    },
+    {
+      "tool": "lease_acquire",
+      "id": "acquire_lease",
+      "arguments": {
+        "resource_id": "r",
+        "holder_id": "a",
+        "ttl_seconds": 600
+      },
+      "probes": [
+        [
+          "sidecar_health",
+          {}
+        ]
+      ],
+      "note": "One lease by its holder."
+    },
+    {
+      "tool": "state_delete",
+      "id": "delete_key",
+      "arguments": {
+        "key": "k"
+      },
+      "prelude": [
+        [
+          "state_set",
+          {
+            "key": "k",
+            "value": 1
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "state_list",
+          {}
+        ]
+      ],
+      "note": "The key is set in the prelude."
+    }
+  ]
+}

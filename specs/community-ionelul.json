@@ -1,0 +1,104 @@
+{
+  "server": {
+    "name": "community-ionelul",
+    "command": [
+      "npx",
+      "-y",
+      "app-ionelul-mcp"
+    ],
+    "container_command": [
+      "app-ionelul-mcp"
+    ],
+    "version": "app-ionelul-mcp (npm latest at image build time; serverInfo reports app-ionelul 0.12.0)",
+    "note": "Drawn at position 890 of Frame 3, block 7, for the R7-B subsample (never pooled). Sixty three local file tools, none annotated. Every writer takes an explicit output path and an overwrite flag; fixtures leave the flag unset, as a caller following the defaults would.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "out"
+      ],
+      "binary_files": {
+        "img/red.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGP4z8DwHx9mGBkKAMLXf4EvceABAAAAAElFTkSuQmCC",
+        "img/red2.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGP4z8DwHx9mGBkKAMLXf4EvceABAAAAAElFTkSuQmCC"
+      }
+    },
+    "timeout_s": 60.0,
+    "image": "agent-fault-lab:block7-n7"
+  },
+  "fixtures": [
+    {
+      "tool": "qr_create",
+      "id": "qr_url",
+      "arguments": {
+        "type": "url",
+        "fields": {
+          "url": "https://example.com"
+        },
+        "output": "{root}/out/qr.svg"
+      },
+      "note": "One QR code as SVG."
+    },
+    {
+      "tool": "barcode_create",
+      "id": "barcode_code128",
+      "arguments": {
+        "type": "code128",
+        "text": "AUDIT-1",
+        "output": "{root}/out/bar.svg"
+      },
+      "note": "One barcode as SVG."
+    },
+    {
+      "tool": "logo_create",
+      "id": "logo_text",
+      "arguments": {
+        "name": "Audit",
+        "output": "{root}/out/logo.svg"
+      },
+      "note": "One text logo as SVG."
+    },
+    {
+      "tool": "favicon_create",
+      "id": "favicon_set",
+      "arguments": {
+        "file": "{root}/img/red.png",
+        "outputDir": "{root}/out/fav"
+      },
+      "note": "A favicon set from the seeded PNG."
+    },
+    {
+      "tool": "gif_create",
+      "id": "gif_two_frames",
+      "arguments": {
+        "files": [
+          "{root}/img/red.png",
+          "{root}/img/red2.png"
+        ],
+        "output": "{root}/out/anim.gif"
+      },
+      "note": "A two-frame GIF from the seeded PNGs."
+    },
+    {
+      "tool": "text_case",
+      "id": "text_upper",
+      "arguments": {
+        "text": "hello world",
+        "case": "upper",
+        "output": "{root}/out/up.txt"
+      },
+      "note": "Not append-shaped; reported beside the R7-B rate."
+    }
+  ]
+}

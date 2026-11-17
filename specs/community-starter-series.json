@@ -1,0 +1,74 @@
+{
+  "server": {
+    "name": "community-starter-series",
+    "command": [
+      "npx",
+      "-y",
+      "starter-series"
+    ],
+    "container_command": [
+      "starter-series"
+    ],
+    "version": "starter-series (npm latest at image build time; serverInfo reports create-starter 0.5.3)",
+    "note": "Drawn at position 866 of Frame 3, block 7, for the R7-B subsample (never pooled). Nine tools, none annotated. Scaffolding and component tools fetch templates over the network and are not exercised; the local tools run against a seeded one-commit repository, observed with .git excluded.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1"
+    },
+    "observer": {
+      "kind": "filesystem",
+      "path": "",
+      "ignore": [
+        "repo/.git",
+        "repo/.git/*",
+        "home",
+        "home/*",
+        ".DS_Store"
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home"
+      ],
+      "files": {
+        "repo/package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\",\"bin\":{\"demo\":\"index.js\"}}\n",
+        "repo/index.js": "console.log(1)\n",
+        "repo/README.md": "# demo\n"
+      },
+      "git": {
+        "path": "repo"
+      }
+    },
+    "timeout_s": 60.0,
+    "image": "agent-fault-lab:block7-n6"
+  },
+  "fixtures": [
+    {
+      "tool": "seed_security_guidance",
+      "id": "seed_guidance",
+      "arguments": {
+        "path": "{root}/repo"
+      },
+      "note": "Writes the guidance file at the repository root."
+    },
+    {
+      "tool": "audit_instructions",
+      "id": "audit_with_state",
+      "arguments": {
+        "path": "{root}/repo",
+        "update_state": true
+      },
+      "note": "Audits with update_state, which saves the run's state."
+    },
+    {
+      "tool": "generate_launch_proof_report",
+      "id": "write_report",
+      "arguments": {
+        "path": "{root}/repo",
+        "output_path": "{root}/repo/LAUNCH.md",
+        "write": true
+      },
+      "note": "Writes the combined report to a named file. Two clean runs differ only in that file's content, so the row is UNPROVEN by design (6.3 diagnosis); the path is fixed by the caller."
+    }
+  ]
+}
