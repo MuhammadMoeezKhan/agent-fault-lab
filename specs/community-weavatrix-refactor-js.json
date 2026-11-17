@@ -92,6 +92,102 @@
         ]
       ],
       "note": "Replaces beta's definition."
+    },
+    {
+      "tool": "apply_edit_plan",
+      "id": "apply_insert_after_symbol",
+      "arguments": {
+        "plan": "{plan}",
+        "mode": "apply",
+        "confirm_token": "{token}",
+        "output_format": "json"
+      },
+      "prelude": [
+        [
+          "edit_symbol",
+          {
+            "symbol": "app.js#alpha@1",
+            "operation": "insert_after_symbol",
+            "content": "\nexport function gamma() {\n  return 3;\n}\n",
+            "output_format": "json"
+          },
+          {
+            "plan": "result.plan"
+          }
+        ],
+        [
+          "apply_edit_plan",
+          {
+            "plan": "{plan}",
+            "mode": "preview",
+            "output_format": "json"
+          },
+          {
+            "token": "result.confirmToken"
+          }
+        ]
+      ],
+      "fault_occurrence": 2,
+      "probes": [
+        [
+          "read_source",
+          {
+            "path": "app.js",
+            "start_line": 1,
+            "before": 0,
+            "after": 40
+          }
+        ]
+      ],
+      "note": "The plan comes from edit_symbol and the single-use confirm token from apply_edit_plan in preview mode, both in the fixture prelude; the apply call is the second call of apply_edit_plan in each trial, so the fault is aimed at occurrence 2. Both applications and the retry reuse the one token."
+    },
+    {
+      "tool": "apply_edit_plan",
+      "id": "apply_replace_symbol_body",
+      "arguments": {
+        "plan": "{plan}",
+        "mode": "apply",
+        "confirm_token": "{token}",
+        "output_format": "json"
+      },
+      "prelude": [
+        [
+          "edit_symbol",
+          {
+            "symbol": "app.js#beta@5",
+            "operation": "replace_symbol_body",
+            "content": "export function beta() {\n  return 22;\n}",
+            "output_format": "json"
+          },
+          {
+            "plan": "result.plan"
+          }
+        ],
+        [
+          "apply_edit_plan",
+          {
+            "plan": "{plan}",
+            "mode": "preview",
+            "output_format": "json"
+          },
+          {
+            "token": "result.confirmToken"
+          }
+        ]
+      ],
+      "fault_occurrence": 2,
+      "probes": [
+        [
+          "read_source",
+          {
+            "path": "app.js",
+            "start_line": 1,
+            "before": 0,
+            "after": 40
+          }
+        ]
+      ],
+      "note": "The plan comes from edit_symbol and the single-use confirm token from apply_edit_plan in preview mode, both in the fixture prelude; the apply call is the second call of apply_edit_plan in each trial, so the fault is aimed at occurrence 2. Both applications and the retry reuse the one token."
     }
   ]
 }
