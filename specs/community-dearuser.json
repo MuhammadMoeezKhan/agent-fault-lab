@@ -1,0 +1,205 @@
+{
+  "server": {
+    "name": "community-dearuser",
+    "command": [
+      "npx",
+      "-y",
+      "@poisedhq/dearuser-mcp"
+    ],
+    "container_command": [
+      "dearuser-mcp"
+    ],
+    "version": "@poisedhq/dearuser-mcp 1.0.20 (npm latest at image build time)",
+    "note": "Drawn in frame order at position 639 of Frame 3. Eleven tools, none annotated. Report tools wait for an onboarding conversation unless the documented DEARUSER_SKIP_ONBOARD=1 is set, which this spec sets. Every report is pointed at a seeded project directory with scope project. The store is SQLite (WAL) under HOME; columns that carry a generated id or a clock value are dropped. feedback posts to a remote inbox and is not called.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1",
+      "DEARUSER_SKIP_ONBOARD": "1"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "sqlite",
+          "name": "store",
+          "path": "home/.dearuser/dearuser.db",
+          "ignore_columns": [
+            "id",
+            "agent_run_id",
+            "last_agent_run_id",
+            "finding_id",
+            "started_at",
+            "finished_at",
+            "given_at",
+            "checked_at",
+            "recorded_at",
+            "applied_at",
+            "first_seen_at",
+            "last_seen_at",
+            "created_at",
+            "updated_at",
+            "occurred_at",
+            "closed_at",
+            "details",
+            "report_json",
+            "finding_json"
+          ]
+        },
+        {
+          "kind": "filesystem",
+          "name": "files",
+          "path": "",
+          "ignore": [
+            "home/.dearuser",
+            "home/.dearuser/*",
+            ".DS_Store"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "project"
+      ],
+      "files": {
+        "project/CLAUDE.md": "# Project\n\nNever force-push.\n\nDEMO_SERVICE_SECRET=not-a-real-secret-000000000000\n"
+      }
+    },
+    "timeout_s": 90.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "health",
+      "id": "health_project",
+      "arguments": {
+        "scope": "project",
+        "projectRoot": "{root}/project"
+      },
+      "probes": [
+        [
+          "history",
+          {
+            "scope": "health",
+            "format": "trend"
+          }
+        ]
+      ],
+      "note": "One project-scope health report."
+    },
+    {
+      "tool": "collab",
+      "id": "collab_project",
+      "arguments": {
+        "scope": "project",
+        "projectRoot": "{root}/project"
+      },
+      "probes": [
+        [
+          "history",
+          {
+            "scope": "collab",
+            "format": "trend"
+          }
+        ]
+      ],
+      "note": "One project-scope collaboration report."
+    },
+    {
+      "tool": "security",
+      "id": "security_project",
+      "arguments": {
+        "scope": "project",
+        "projectRoot": "{root}/project"
+      },
+      "probes": [
+        [
+          "history",
+          {
+            "scope": "security",
+            "format": "trend"
+          }
+        ]
+      ],
+      "note": "One project-scope security report over the seeded file."
+    },
+    {
+      "tool": "wrapped",
+      "id": "wrapped_project",
+      "arguments": {
+        "scope": "project",
+        "projectRoot": "{root}/project"
+      },
+      "probes": [
+        [
+          "history",
+          {
+            "scope": "all",
+            "format": "trend"
+          }
+        ]
+      ],
+      "note": "One project-scope summary."
+    },
+    {
+      "tool": "dismiss_recommendation",
+      "id": "dismiss_context7",
+      "arguments": {
+        "recommendation_id": "{rec}",
+        "reason": "wont_fix"
+      },
+      "prelude": [
+        [
+          "collab",
+          {
+            "scope": "project",
+            "projectRoot": "{root}/project"
+          },
+          {
+            "rec": "re:\\*\\*Context7[^\\n]*\\*\\*\\n(?:[^\\n]*\\n){0,4}?[^\\n]*recommendation_id: ([0-9a-f-]{36})"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "history",
+          {
+            "scope": "collab",
+            "format": "regression"
+          }
+        ]
+      ],
+      "note": "A collab report in the prelude stores the recommendations; the id of the one titled Context7 is read from the report text by pattern, since the menu order varies between runs and the id appears only in the text."
+    },
+    {
+      "tool": "implement_recommendation",
+      "id": "implement_context7",
+      "arguments": {
+        "recommendation_id": "{rec}"
+      },
+      "prelude": [
+        [
+          "collab",
+          {
+            "scope": "project",
+            "projectRoot": "{root}/project"
+          },
+          {
+            "rec": "re:\\*\\*Context7[^\\n]*\\*\\*\\n(?:[^\\n]*\\n){0,4}?[^\\n]*recommendation_id: ([0-9a-f-]{36})"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "history",
+          {
+            "scope": "collab",
+            "format": "regression"
+          }
+        ]
+      ],
+      "note": "Same prelude as dismiss_context7. The recommendation is of the kind the server answers with a command for the caller to run; the call is made, the command is not run."
+    }
+  ]
+}
