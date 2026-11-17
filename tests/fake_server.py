@@ -30,6 +30,20 @@ import time
 
 TOOLS = [
     {
+        "name": "staged_append",
+        "description": "Preview an append and get a single-use token, then apply it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "line": {"type": "string"},
+                "mode": {"type": "string", "enum": ["preview", "apply"]},
+                "confirm_token": {"type": "string"},
+            },
+            "required": ["path", "line"],
+        },
+    },
+    {
         "name": "append_line",
         "description": "Append a line to a file.",
         "inputSchema": {
@@ -130,6 +144,7 @@ TOOLS = [
 ]
 
 KEYS_FILE = ".keys.json"
+TOKENS_FILE = ".tokens.json"
 LEDGER = ".ledger"
 
 
@@ -162,7 +177,35 @@ def _seen_key(key: str) -> bool:
     return False
 
 
+def _tokens() -> list:
+    try:
+        with open(TOKENS_FILE, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _staged_append(arguments: dict) -> str:
+    """Preview mints a single-use token; apply consumes it, else refuses in a success frame."""
+    tokens = _tokens()
+    if arguments.get("mode", "preview") == "preview":
+        token = f"t{len(tokens) + 1}-{time.time_ns()}"
+        tokens.append(token)
+        with open(TOKENS_FILE, "w", encoding="utf-8") as handle:
+            json.dump(tokens, handle)
+        return json.dumps({"confirmToken": token})
+    token = arguments.get("confirm_token")
+    if token not in tokens:
+        return json.dumps({"status": "TOKEN_UNKNOWN"})
+    tokens.remove(token)
+    with open(TOKENS_FILE, "w", encoding="utf-8") as handle:
+        json.dump(tokens, handle)
+    return _append(arguments["path"], arguments["line"])
+
+
 def call_tool(name: str, arguments: dict) -> str:
+    if name == "staged_append":
+        return _staged_append(arguments)
     if name == "append_line":
         return _append(arguments["path"], arguments["line"])
     if name == "append_with_key":
@@ -203,7 +246,7 @@ def call_tool(name: str, arguments: dict) -> str:
         names = sorted(
             entry
             for entry in os.listdir(os.getcwd())
-            if entry not in (KEYS_FILE, LEDGER)
+            if entry not in (KEYS_FILE, LEDGER, TOKENS_FILE)
         )
         return "\n".join(names)
     raise ValueError(f"unknown tool {name}")

@@ -271,6 +271,16 @@ class Fixture:
     #: sets it is declaring the client's retry pacing, and every row from such
     #: a fixture carries the value so it is never pooled unawares.
     application_gap_s: float = 0.0
+    #: Which call of `tool` within a trial is the fixture's first
+    #: application, and so which occurrence the fault is aimed at. One, the
+    #: default, is the audit as preregistered. It exists for prepare-then-
+    #: commit tools that do both through one name (a `mode` of preview or
+    #: apply): the preview has to run in the prelude to mint the token the
+    #: apply consumes, so the apply is the second call of the tool, not the
+    #: first. The spec loader checks the value against the preludes, so a
+    #: prelude call to the tool under test is still refused unless the
+    #: fixture has accounted for it here.
+    fault_occurrence: int = 1
     note: str = ""
     #: Distinguishes two fixtures for the same tool. One SQL write tool can
     #: be an INSERT in one fixture and an UPDATE in another, and those behave
@@ -828,10 +838,18 @@ class Audit:
                     f"application gap {fixture.application_gap_s:g}s declared "
                     "(not the preregistered pacing)"
                 )
+            if fixture.fault_occurrence != 1:
+                notes.append(
+                    f"fault aimed at call {fixture.fault_occurrence} of "
+                    f"{fixture.tool} (the earlier calls are the fixture's "
+                    "own prelude)"
+                )
             rejections = 0
             retries = 0
             for _ in range(self.repeats):
-                plan = FaultPlan.parse(f"{mode.id}:{fixture.tool}@1")
+                plan = FaultPlan.parse(
+                    f"{mode.id}:{fixture.tool}@{fixture.fault_occurrence}"
+                )
                 settle = self.settle_s + plan.delay_s if mode.id == "F3" else 0.0
                 trial, _, after, _ = self._trial(
                     fixture,

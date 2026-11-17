@@ -301,6 +301,33 @@ def _validate_preludes(
     """
     server_tools = {tool for tool, _ in target_prelude}
     for fixture in fixtures:
+        if fixture.fault_occurrence < 1:
+            raise SpecError(
+                f"fixture {fixture.identity!r} has fault_occurrence "
+                f"{fixture.fault_occurrence}; calls are counted from 1"
+            )
+        if fixture.fault_occurrence != 1:
+            # The one sanctioned way for a prelude to call the tool under
+            # test: the fixture says how many such calls precede its own,
+            # and the count has to match exactly, so the fault is aimed at
+            # the fixture's application and nowhere else. Only a fixture's
+            # own prelude may do this; a server prelude runs for every
+            # fixture and cannot know which occurrence each one aims at.
+            own_calls = sum(1 for entry in fixture.prelude if entry[0] == fixture.tool)
+            if fixture.tool in server_tools:
+                raise SpecError(
+                    f"the server prelude calls {fixture.tool!r}; "
+                    f"fault_occurrence only accounts for calls in the "
+                    f"fixture's own prelude"
+                )
+            if own_calls != fixture.fault_occurrence - 1:
+                raise SpecError(
+                    f"fixture {fixture.identity!r} aims the fault at call "
+                    f"{fixture.fault_occurrence} of {fixture.tool!r}, but its "
+                    f"prelude calls that tool {own_calls} time(s); the two "
+                    f"must agree or the fault lands on the wrong call"
+                )
+            continue
         if fixture.tool in server_tools:
             raise SpecError(
                 f"the server prelude calls {fixture.tool!r}, which fixture "
@@ -315,7 +342,8 @@ def _validate_preludes(
             raise SpecError(
                 f"fixture {fixture.identity!r} has {fixture.tool!r} in its "
                 f"own prelude, which is the tool it is testing. Same reason: "
-                f"the prelude call would take the fault."
+                f"the prelude call would take the fault. A preview-then-apply "
+                f"tool that must call itself first declares fault_occurrence."
             )
 
 
@@ -422,6 +450,7 @@ def from_document(document: dict[str, Any]) -> tuple[ServerTarget, list[Fixture]
                 probe_drop_keys=tuple(raw.get("probe_drop_keys") or ()),
                 probe_stable=bool(raw.get("probe_stable", False)),
                 application_gap_s=float(raw.get("application_gap_s", 0.0)),
+                fault_occurrence=int(raw.get("fault_occurrence", 1)),
                 note=raw.get("note", ""),
                 id=raw.get("id", ""),
             )
