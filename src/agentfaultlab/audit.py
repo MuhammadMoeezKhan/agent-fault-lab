@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -366,9 +367,34 @@ def extract(payload: Any, path: str) -> Any:
     return payload
 
 
+#: Prefix that marks a capture path as a regular expression over the reply
+#: text rather than a dotted path into a JSON document.
+PATTERN_PREFIX = "re:"
+
+
 def capture_from(result: Optional[dict[str, Any]], path: str) -> Any:
+    """Read a captured value out of a prelude reply.
+
+    A dotted path is tried against `structuredContent`, then against the
+    reply text parsed as JSON. A path written `re:<pattern>` is instead a
+    regular expression searched in the reply text, and the value is its first
+    group (or the whole match when it has none). It exists for servers that
+    print an identifier the next call needs only in prose: a report that ends
+    with "recommendation_id: <uuid>" and has no JSON form carrying it. The
+    first match is taken, so a pattern should be written to be unambiguous;
+    no match raises, exactly like a missing key.
+    """
     if result is None:
         raise CaptureError(f"no result to capture {path!r} from")
+    if path.startswith(PATTERN_PREFIX):
+        pattern = path[len(PATTERN_PREFIX):]
+        try:
+            match = re.search(pattern, _result_text(result))
+        except re.error as exc:
+            raise CaptureError(f"unreadable capture pattern {pattern!r}: {exc}") from exc
+        if match is None:
+            raise CaptureError(f"pattern {pattern!r} matched nothing in the reply text")
+        return match.group(1) if match.re.groups else match.group(0)
     structured = result.get("structuredContent")
     if isinstance(structured, dict):
         try:

@@ -193,3 +193,49 @@ def test_a_later_prelude_call_sees_an_earlier_capture():
         "plan": {"edits": [1, 2]},
         "confirm_token": "tok-1",
     }
+
+
+# ------------------------------------------------------------ pattern capture
+
+def _text_reply(text):
+    return {"content": [{"type": "text", "text": text}]}
+
+
+def test_a_pattern_capture_takes_the_first_group_from_the_text():
+    from agentfaultlab.audit import capture_from
+
+    reply = _text_reply(
+        "Three things to fix\n1. A\n   `recommendation_id: 11111111-aaaa`\n"
+        "2. B\n   `recommendation_id: 22222222-bbbb`\n"
+    )
+    assert capture_from(reply, r"re:recommendation_id: ([0-9a-f-]+)") == "11111111-aaaa"
+
+
+def test_a_pattern_without_a_group_returns_the_whole_match():
+    from agentfaultlab.audit import capture_from
+
+    assert capture_from(_text_reply("token abc123 issued"), r"re:abc\d+") == "abc123"
+
+
+def test_a_pattern_that_matches_nothing_raises_like_a_missing_key():
+    from agentfaultlab.audit import CaptureError, capture_from
+
+    with pytest.raises(CaptureError, match="matched nothing"):
+        capture_from(_text_reply("no ids here"), r"re:id: (\w+)")
+
+
+def test_an_unreadable_pattern_raises_rather_than_crashing():
+    from agentfaultlab.audit import CaptureError, capture_from
+
+    with pytest.raises(CaptureError, match="unreadable"):
+        capture_from(_text_reply("x"), "re:(")
+
+
+def test_a_pattern_is_not_read_as_a_dotted_path_into_structured_content():
+    from agentfaultlab.audit import capture_from
+
+    reply = {
+        "structuredContent": {"re:id": "wrong"},
+        "content": [{"type": "text", "text": "id: right"}],
+    }
+    assert capture_from(reply, r"re:id: (\w+)") == "right"
