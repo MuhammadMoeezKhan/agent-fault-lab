@@ -1,0 +1,214 @@
+{
+  "server": {
+    "name": "community-agents-party",
+    "command": [
+      "npx",
+      "-y",
+      "agents-party",
+      "mcp"
+    ],
+    "container_command": [
+      "agents-party",
+      "mcp"
+    ],
+    "version": "agents-party 0.7.2 (npm latest at image build time)",
+    "note": "Drawn in frame order at position 634 of Frame 3. Eight tools, none annotated. Only local parties are exercised (no server argument, so nothing leaves the machine). The data directory is set with the documented AGENTS_PARTY_DIR override inside the trial root. Each party is its own SQLite file named by a generated id, so the per-party stores are observed as an unnamed collection; generated ids, clock values, the encryption key and the registry's message counter and size are dropped. party_listen blocks and is not called. messages.text is dropped under 6.3: two clean runs of send_broadcast differed only in that column, which holds the message encrypted under a fresh nonce on every write (party_read decrypts both to the same text); a repeated send still shows as a second message row.",
+    "env": {
+      "HOME": "{root}/home",
+      "NO_COLOR": "1",
+      "AGENTS_PARTY_DIR": "{root}/party"
+    },
+    "observer": {
+      "kind": "composite",
+      "parts": [
+        {
+          "kind": "sqlite",
+          "name": "registry",
+          "path": "party/registry.sqlite",
+          "ignore_columns": [
+            "id",
+            "createdAt",
+            "lastMessageAt",
+            "messagesCount",
+            "sizeBytes",
+            "key",
+            "keyWrapped"
+          ]
+        },
+        {
+          "kind": "sqlite",
+          "name": "parties",
+          "path": "party/parties/*.sqlite",
+          "unnamed": true,
+          "ignore_columns": [
+            "id",
+            "ts",
+            "seq",
+            "joinedAt",
+            "leftAt",
+            "messages.text"
+          ]
+        },
+        {
+          "kind": "filesystem",
+          "name": "files",
+          "path": "",
+          "ignore": [
+            "party",
+            "party/*",
+            ".DS_Store"
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "directories": [
+        "home",
+        "party",
+        "party/parties"
+      ]
+    },
+    "timeout_s": 60.0,
+    "image": "agent-fault-lab:block6-n2"
+  },
+  "fixtures": [
+    {
+      "tool": "party_create",
+      "id": "create_local",
+      "arguments": {
+        "title": "audit"
+      },
+      "note": "Creates a local party."
+    },
+    {
+      "tool": "party_join",
+      "id": "join_bob",
+      "arguments": {
+        "ref": "{ref}",
+        "as": "bob",
+        "desc": "reviews"
+      },
+      "prelude": [
+        [
+          "party_create",
+          {
+            "title": "audit"
+          },
+          {
+            "ref": "re:(local:[0-9a-f-]+)"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "party_who",
+          {
+            "ref": "{ref}"
+          }
+        ]
+      ],
+      "note": "The party is created in the prelude and its ref read from the reply text by pattern."
+    },
+    {
+      "tool": "party_send",
+      "id": "send_broadcast",
+      "arguments": {
+        "ref": "{ref}",
+        "as": "alice",
+        "text": "hello"
+      },
+      "prelude": [
+        [
+          "party_create",
+          {
+            "title": "audit"
+          },
+          {
+            "ref": "re:(local:[0-9a-f-]+)"
+          }
+        ],
+        [
+          "party_join",
+          {
+            "ref": "{ref}",
+            "as": "alice",
+            "desc": "writes"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "party_read",
+          {
+            "ref": "{ref}",
+            "as": "alice"
+          }
+        ]
+      ],
+      "note": "Created and joined in the prelude; one broadcast message."
+    },
+    {
+      "tool": "party_leave",
+      "id": "leave_alice",
+      "arguments": {
+        "ref": "{ref}",
+        "as": "alice"
+      },
+      "prelude": [
+        [
+          "party_create",
+          {
+            "title": "audit"
+          },
+          {
+            "ref": "re:(local:[0-9a-f-]+)"
+          }
+        ],
+        [
+          "party_join",
+          {
+            "ref": "{ref}",
+            "as": "alice",
+            "desc": "writes"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "party_who",
+          {
+            "ref": "{ref}"
+          }
+        ]
+      ],
+      "note": "Created and joined in the prelude."
+    },
+    {
+      "tool": "party_invite",
+      "id": "invite_any",
+      "arguments": {
+        "ref": "{ref}"
+      },
+      "prelude": [
+        [
+          "party_create",
+          {
+            "title": "audit"
+          },
+          {
+            "ref": "re:(local:[0-9a-f-]+)"
+          }
+        ]
+      ],
+      "probes": [
+        [
+          "party_who",
+          {
+            "ref": "{ref}"
+          }
+        ]
+      ],
+      "note": "Created in the prelude; returns invite text."
+    }
+  ]
+}
