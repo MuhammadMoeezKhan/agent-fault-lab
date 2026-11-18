@@ -1,0 +1,69 @@
+{
+ "server": {
+  "name": "community-mc-translator",
+  "command": [
+   "uvx",
+   "mc-translator-mcp"
+  ],
+  "container_command": [
+   "mc-translator-mcp"
+  ],
+  "image": "agent-fault-lab:fixtures-20261028c",
+  "version": "mc-translator-mcp (PyPI, installed in the 2026-10-28 fixtures image; serverInfo 1.30.0)",
+  "note": "Frame 3 position 235 (block 3). Re-entered 2026-11-18: its tools take a mod jar, which setup.files could not seed before binary_files existed. The seeded jar is a minimal mod with one English language file of three entries.",
+  "env": {
+   "HOME": "{root}/home",
+   "NO_COLOR": "1"
+  },
+  "observer": {
+   "kind": "filesystem",
+   "name": "trial-root",
+   "path": "",
+   "ignore": [
+    ".DS_Store"
+   ]
+  },
+  "note_observer": "The whole trial root including HOME is observed, so a resource pack, a cache or a config written anywhere under it shows up.",
+  "setup": {
+   "directories": [
+    "home",
+    "mods"
+   ],
+   "binary_files": {
+    "mods/demo-1.0.0.jar": "UEsDBBQAAAAIAAAAIVx631ogGAAAABYAAAAUAAAATUVUQS1JTkYvTUFOSUZFU1QuTUbzTczLTEstLtENSy0qzszPs1Iw1DPgAgBQSwMEFAAAAAgAAAAhXL7suAM4AAAARgAAAA8AAABmYWJyaWMubW9kLmpzb26rVipOzkjNTQxLLSrOzM9TslIw1FFQykwBMpRSUnPzlYC8MrickqGegZ4BSCwvMTcVJOACUlMLAFBLAwQUAAAACAAAACFcO9RfEDoAAABYAAAAGwAAAGFzc2V0cy9kZW1vL2xhbmcvZW5fdXMuanNvbqvmUlDKLEnN1UtJzc3XSywoyElVslJQcgQzdFAki0vy88CSwWAGSDIpJz85GyKbk5hbAJL0AdFctQBQSwECFAMUAAAACAAAACFcet9aIBgAAAAWAAAAFAAAAAAAAAAAAAAAgAEAAAAATUVUQS1JTkYvTUFOSUZFU1QuTUZQSwECFAMUAAAACAAAACFcvuy4AzgAAABGAAAADwAAAAAAAAAAAAAAgAFKAAAAZmFicmljLm1vZC5qc29uUEsBAhQDFAAAAAgAAAAhXDvUXxA6AAAAWAAAABsAAAAAAAAAAAAAAIABrwAAAGFzc2V0cy9kZW1vL2xhbmcvZW5fdXMuanNvblBLBQYAAAAAAwADAMgAAAAiAQAAAAA="
+   }
+  },
+  "timeout_s": 120.0
+ },
+ "fixtures": [
+  {
+   "tool": "preview_mod",
+   "id": "preview_seeded_jar",
+   "arguments": {
+    "jar_path": "{root}/mods/demo-1.0.0.jar"
+   },
+   "note": "Scans the seeded jar's language files."
+  },
+  {
+   "tool": "translate_mod",
+   "id": "translate_seeded_jar",
+   "arguments": {
+    "jar_path": "{root}/mods/demo-1.0.0.jar",
+    "batch_size": 15,
+    "force_retranslate": false
+   },
+   "note": "Translates the seeded jar into a resource pack."
+  },
+  {
+   "tool": "translate_all_mods_in_directory",
+   "id": "translate_mods_dir",
+   "arguments": {
+    "directory": "{root}/mods",
+    "glob_pattern": "*.jar",
+    "batch_size": 15,
+    "force_retranslate": false
+   },
+   "note": "Translates every jar in the seeded mods directory."
+  }
+ ]
+}
